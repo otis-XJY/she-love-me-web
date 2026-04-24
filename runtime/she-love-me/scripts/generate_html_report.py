@@ -861,46 +861,50 @@ def render_html(stats, analysis, contact_name):
   body,
   .report-document {{
     margin: 0;
-    --ta-bg: #11100d;
-    --ta-bg-2: #2a2418;
-    --ta-panel: rgba(31, 28, 22, .9);
-    --ta-panel-strong: #19160f;
-    --ta-ink: #f6eddb;
-    --ta-soft: #d7c3a2;
-    --ta-muted: #a99776;
-    --ta-line: rgba(215, 177, 101, .24);
-    --ta-accent: #c89c48;
-    --ta-accent-strong: #f0c56d;
-    --ta-good: #64c28f;
-    --ta-danger: #df6b62;
-    --ta-shadow: 0 24px 70px rgba(0, 0, 0, .36);
+    --ta-bg: #fcf9f8;
+    --ta-bg-2: #f0edec;
+    --ta-panel: rgba(252, 249, 248, .94);
+    --ta-panel-strong: #ffffff;
+    --ta-ink: #1b1c1b;
+    --ta-soft: #514346;
+    --ta-muted: #837375;
+    --ta-line: #d5c2c4;
+    --ta-accent: #894854;
+    --ta-accent-strong: #a6606c;
+    --ta-good: #3f6446;
+    --ta-danger: #894854;
+    --ta-shadow: 0 18px 50px rgba(137, 72, 84, .12);
     color: var(--ta-ink);
-    background: linear-gradient(135deg, var(--ta-bg), var(--ta-bg-2));
+    background-color: var(--ta-bg);
+    background-image:
+      linear-gradient(to bottom, color-mix(in oklab, var(--ta-bg) 92%, transparent), color-mix(in oklab, var(--ta-bg) 92%, transparent)),
+      radial-gradient(circle at top left, color-mix(in oklab, var(--ta-accent) 7%, transparent), transparent 26%),
+      radial-gradient(circle at 82% 18%, color-mix(in oklab, var(--ta-accent-strong) 5%, transparent), transparent 18%);
     font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
-    color-scheme: dark;
+    color-scheme: light;
   }}
   .report-document {{
     background: transparent !important;
   }}
   body.report-tone-positive,
   .report-document.report-tone-positive {{
-    --ta-bg: #11100d; --ta-bg-2: #2a2418; --ta-panel: rgba(31, 28, 22, .9); --ta-panel-strong: #19160f;
-    --ta-ink: #f6eddb; --ta-soft: #d7c3a2; --ta-muted: #a99776; --ta-line: rgba(215, 177, 101, .24); --ta-accent: #c89c48; --ta-accent-strong: #f0c56d; --ta-good: #64c28f; --ta-danger: #df6b62;
+    --ta-bg: #fcf9f8; --ta-bg-2: #f0edec; --ta-panel: rgba(252, 249, 248, .94); --ta-panel-strong: #ffffff;
+    --ta-ink: #1b1c1b; --ta-soft: #514346; --ta-muted: #837375; --ta-line: #d5c2c4; --ta-accent: #894854; --ta-accent-strong: #a6606c; --ta-good: #3f6446; --ta-danger: #894854;
   }}
   body.report-tone-negative,
   .report-document.report-tone-negative {{
-    --ta-bg: #11100d; --ta-bg-2: #2a2418; --ta-panel: rgba(31, 28, 22, .9); --ta-panel-strong: #19160f;
-    --ta-ink: #f6eddb; --ta-soft: #d7c3a2; --ta-muted: #a99776; --ta-line: rgba(215, 177, 101, .24); --ta-accent: #c89c48; --ta-accent-strong: #f0c56d; --ta-good: #64c28f; --ta-danger: #df6b62;
+    --ta-bg: #fcf9f8; --ta-bg-2: #f0edec; --ta-panel: rgba(252, 249, 248, .94); --ta-panel-strong: #ffffff;
+    --ta-ink: #1b1c1b; --ta-soft: #514346; --ta-muted: #837375; --ta-line: #d5c2c4; --ta-accent: #40524b; --ta-accent-strong: #6f8178; --ta-good: #00685f; --ta-danger: #894854;
   }}
-  :host-context(body.ui-rose) .report-document {{ --ta-bg: #fff1f2; --ta-bg-2: #f3c9ce; --ta-panel: rgba(255, 248, 246, .94); --ta-panel-strong: #fffaf7; --ta-ink: #35151b; --ta-soft: #6f4048; --ta-muted: #9c6670; --ta-line: rgba(125, 54, 66, .2); --ta-accent: #b94f64; --ta-accent-strong: #7b2435; }}
-  :host-context(body.ui-gold) .report-document {{ --ta-bg: #11100d; --ta-bg-2: #2a2418; --ta-panel: rgba(31, 28, 22, .9); --ta-panel-strong: #19160f; --ta-ink: #f6eddb; --ta-soft: #d7c3a2; --ta-muted: #a99776; --ta-line: rgba(215, 177, 101, .24); --ta-accent: #c89c48; --ta-accent-strong: #f0c56d; }}
-  :host-context(body.ui-minimal) .report-document {{ --ta-bg: #f5f3ee; --ta-bg-2: #e9e3d8; --ta-panel: rgba(255, 252, 247, .94); --ta-panel-strong: #fffdf8; --ta-ink: #211f1c; --ta-soft: #5c5750; --ta-muted: #8a8075; --ta-line: rgba(47, 42, 35, .18); --ta-accent: #6f6251; --ta-accent-strong: #2c2924; }}
+  :host-context(body.ui-rose) .report-document {{ --ta-bg: #fcf9f8; --ta-bg-2: #f0edec; --ta-panel: rgba(252, 249, 248, .94); --ta-panel-strong: #ffffff; --ta-ink: #1b1c1b; --ta-soft: #514346; --ta-muted: #837375; --ta-line: #d5c2c4; --ta-accent: #894854; --ta-accent-strong: #a6606c; --ta-good: #3f6446; --ta-danger: #894854; }}
+  :host-context(body.ui-blue) .report-document {{ --ta-bg: #f7f9ff; --ta-bg-2: #e8eefb; --ta-panel: rgba(248, 250, 255, .94); --ta-panel-strong: #ffffff; --ta-ink: #171c27; --ta-soft: #556070; --ta-muted: #8791a6; --ta-line: #d3daea; --ta-accent: #3f67d7; --ta-accent-strong: #6884de; --ta-good: #3f6d86; --ta-danger: #894854; }}
+  :host-context(body.ui-graphite) .report-document {{ --ta-bg: #fcf9f8; --ta-bg-2: #f0edec; --ta-panel: rgba(252, 249, 248, .94); --ta-panel-strong: #ffffff; --ta-ink: #1b1c1b; --ta-soft: #514346; --ta-muted: #837375; --ta-line: #d5c2c4; --ta-accent: #40524b; --ta-accent-strong: #6f8178; --ta-good: #00685f; --ta-danger: #894854; }}
   * {{ box-sizing: border-box; }}
   h1, h2, h3, h4, p, dl, dd {{ margin: 0; }}
   .ta-report {{ max-width: 1120px; margin: 0 auto; padding: clamp(22px, 4vw, 46px); color: var(--ta-ink); }}
   .ta-summary {{ display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: clamp(24px, 5vw, 64px); align-items: end; padding: clamp(28px, 5vw, 58px); border: 1px solid var(--ta-line); background: radial-gradient(circle at 8% 12%, color-mix(in srgb, var(--ta-accent) 18%, transparent), transparent 32%), linear-gradient(135deg, color-mix(in srgb, var(--ta-bg) 82%, transparent), color-mix(in srgb, var(--ta-bg-2) 72%, transparent)), var(--ta-panel-strong); box-shadow: var(--ta-shadow); }}
   .ta-kicker, .ta-section-title span, .ta-panel h3 {{ color: var(--ta-accent); font-weight: 800; letter-spacing: .03em; }}
-  .ta-summary h1 {{ margin-top: 16px; font-size: clamp(48px, 8vw, 92px); line-height: .98; letter-spacing: -.07em; font-weight: 900; }}
+  .ta-summary h1 {{ margin-top: 16px; font-size: clamp(46px, 7vw, 76px); line-height: 1.02; letter-spacing: -.06em; font-weight: 900; word-break: keep-all; overflow-wrap: normal; }}
   .ta-summary-lead {{ max-width: 780px; margin-top: 22px; color: var(--ta-soft); font-size: clamp(18px, 2.2vw, 24px); line-height: 1.7; }}
   .ta-facts {{ display: grid; gap: 10px; margin: 0; }}
   .ta-facts div {{ display: grid; grid-template-columns: 76px 1fr; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--ta-line); }}

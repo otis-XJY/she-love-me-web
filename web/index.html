@@ -31,9 +31,9 @@
         </div>
         <div class="hero-content">
           <h2 id="panelTitle">分析主线</h2>
-          <div class="hero-actions">
-            <button class="primary hero-cta" id="heroStartBtn">开始分析</button>
-            <button class="secondary hero-cta" id="firstConfigBtn">初次配置</button>
+          <div class="hero-status" id="heroStatus">
+            <span id="heroStatusText">正在检测本地环境</span>
+            <b><i id="heroStatusBar"></i></b>
           </div>
         </div>
         <button class="scroll-cue" id="heroScrollCue" type="button" aria-label="下滑查看功能">向下</button>
@@ -42,36 +42,32 @@
       <section class="panes">
         <article class="pane visible" id="pane-main">
           <section class="workflow-board">
-            <div class="workflow-card">
-              <h3>扫描微信</h3>
+            <div class="workflow-card read-card">
+              <h3>读取聊天</h3>
+              <p class="flow-copy">自动检查环境、解密微信数据库并读取联系人。</p>
               <div class="actions">
-                <button class="primary" id="discoverBtn">一键识别微信</button>
-                <button class="secondary" id="loadContactsBtn">读取联系人</button>
+                <button class="primary" id="loadContactsBtn">开始读取联系人</button>
               </div>
+              <p class="flow-hint" id="contactSummary">尚未读取联系人。</p>
             </div>
 
-            <div class="workflow-card">
-              <h3>角色选择</h3>
+            <div class="workflow-card contact-card">
+              <h3>选择对象</h3>
               <div class="contact-toolbar">
                 <label class="search-field">
                   <span>搜索联系人</span>
                   <input id="contactSearch" type="search" placeholder="输入姓名或微信号">
                 </label>
-                <button class="secondary" id="contactsRefreshBtn">刷新</button>
               </div>
               <div class="contact-list compact" id="contactList"></div>
-              <div class="actions sticky-actions">
-                <button class="primary" id="extractBtn" disabled>提取并统计</button>
-              </div>
             </div>
 
-            <div class="workflow-card">
-              <h3>潜台词扫描</h3>
+            <div class="workflow-card report-card">
+              <h3>生成报告</h3>
+              <p class="flow-copy" id="selectedHint">先选择一个联系人。</p>
               <div class="actions">
-                <button class="secondary" id="analyzeBtn">生成分析</button>
-                <button class="primary" id="reportBtn">生成报告</button>
+                <button class="primary" id="reportBtn" disabled>生成结果分析报告</button>
               </div>
-              <pre class="preview" id="analysisPreview">尚未生成分析。</pre>
             </div>
           </section>
 
@@ -147,9 +143,9 @@
           <section class="theme-panel">
             <h4>颜色风格</h4>
             <div class="theme-grid">
-              <button class="theme-choice active" data-theme="neon"><span>I.</span>霓虹紫</button>
+              <button class="theme-choice" data-theme="neon"><span>I.</span>霓虹紫</button>
               <button class="theme-choice" data-theme="cyan"><span>II.</span>电光蓝</button>
-              <button class="theme-choice" data-theme="ember"><span>III.</span>暖焰橙</button>
+              <button class="theme-choice active" data-theme="ember"><span>III.</span>暖焰橙</button>
             </div>
           </section>
         </article>

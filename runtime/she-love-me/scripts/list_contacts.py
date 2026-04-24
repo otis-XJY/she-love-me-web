@@ -12,6 +12,7 @@ import os
 import re
 import sqlite3
 import sys
+from pathlib import Path
 
 # Windows 控制台 UTF-8 输出
 if sys.platform == "win32":
@@ -24,6 +25,24 @@ def get_display_name(row):
     return remark or nick_name or username
 
 
+def json_error(message, **extra):
+    payload = {"error": message, **extra}
+    print(json.dumps(payload, ensure_ascii=False))
+
+
+def open_checked_db(path):
+    try:
+        conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+        result = conn.execute("PRAGMA quick_check").fetchone()
+        if not result or str(result[0]).lower() != "ok":
+            raise sqlite3.DatabaseError(f"quick_check failed: {result[0] if result else 'empty result'}")
+        return conn
+    except sqlite3.DatabaseError as exc:
+        raise RuntimeError(
+            "联系人数据库损坏或解密不完整。请重新执行“开始读取联系人”；如果仍失败，关闭微信并用管理员权限重新启动本地服务后再试。"
+        ) from exc
+
+
 def load_contacts(decrypted_dir):
     contact_db = os.path.join(decrypted_dir, "contact", "contact.db")
     if not os.path.exists(contact_db):
@@ -31,7 +50,7 @@ def load_contacts(decrypted_dir):
         return []
 
     contacts = []
-    conn = sqlite3.connect(contact_db)
+    conn = open_checked_db(contact_db)
     try:
         rows = conn.execute(
             "SELECT username, nick_name, remark FROM contact WHERE username NOT LIKE '%@chatroom'"
@@ -70,8 +89,16 @@ def count_messages(decrypted_dir, contacts):
     for db_file in msg_dbs:
         db_path = os.path.join(msg_dir, db_file)
         try:
-            conn = sqlite3.connect(db_path)
+            conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
             try:
+                try:
+                    checked = conn.execute("PRAGMA quick_check").fetchone()
+                    if not checked or str(checked[0]).lower() != "ok":
+                        print(f"[!] 跳过损坏消息库: {db_path}", file=sys.stderr)
+                        continue
+                except sqlite3.DatabaseError:
+                    print(f"[!] 跳过损坏消息库: {db_path}", file=sys.stderr)
+                    continue
                 # 通过 Name2Id 表找到 username -> table 的对应关系
                 try:
                     id_rows = conn.execute("SELECT user_name FROM Name2Id").fetchall()
@@ -104,9 +131,15 @@ def main():
         print(json.dumps({"error": f"目录不存在: {decrypted_dir}"}))
         sys.exit(1)
 
-    contacts = load_contacts(decrypted_dir)
+    try:
+        contacts = load_contacts(decrypted_dir)
+    except RuntimeError as exc:
+        contact_db = Path(decrypted_dir) / "contact" / "contact.db"
+        json_error(str(exc), code="CONTACT_DB_CORRUPT", path=str(contact_db))
+        sys.exit(2)
+
     if not contacts:
-        print(json.dumps({"error": "未找到联系人数据"}))
+        print(json.dumps({"error": "未找到联系人数据"}, ensure_ascii=False))
         sys.exit(1)
 
     count_messages(decrypted_dir, contacts)

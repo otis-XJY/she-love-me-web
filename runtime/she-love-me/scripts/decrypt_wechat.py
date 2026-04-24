@@ -8,6 +8,7 @@ decrypt_wechat.py - she-love-me 的跨平台解密入口
 import os
 import platform
 import json
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -18,6 +19,7 @@ DECRYPTOR_DIR = REPO_ROOT / "vendor" / "wechat-decrypt"
 MACOS_SCANNER = DECRYPTOR_DIR / "find_all_keys_macos"
 MACOS_SCANNER_SOURCE = DECRYPTOR_DIR / "find_all_keys_macos.c"
 KEYS_FILE = DECRYPTOR_DIR / "all_keys.json"
+DECRYPTED_DIR = DECRYPTOR_DIR / "decrypted"
 
 
 def run_command(cmd, cwd, check=True):
@@ -30,6 +32,13 @@ def run_command(cmd, cwd, check=True):
 def ensure_decryptor_exists():
     if not DECRYPTOR_DIR.exists():
         raise RuntimeError("未找到 vendor/wechat-decrypt，请先执行 setup_check.py")
+
+
+def reset_decrypted_output():
+    # decrypted/ 是本项目生成的缓存输出；每次重新识别前清空，避免上次中断留下损坏 SQLite。
+    if DECRYPTED_DIR.exists():
+        shutil.rmtree(DECRYPTED_DIR)
+    DECRYPTED_DIR.mkdir(parents=True, exist_ok=True)
 
 
 def should_rebuild_macos_scanner():
@@ -81,6 +90,7 @@ def run_default_flow():
 
 def main():
     ensure_decryptor_exists()
+    reset_decrypted_output()
     system = platform.system().lower()
 
     if system == "darwin":

@@ -195,6 +195,13 @@ function renderStatus(status, options = {}) {
     $("environmentBadge").textContent = status.environment_label || (status.environment_ready ? "环境就绪" : "环境异常");
     $("environmentBadge").classList.toggle("bad", !status.environment_ready);
   }
+  document.body.classList.toggle("environment-ready", Boolean(status.environment_ready));
+  if ($("heroStatusText")) {
+    $("heroStatusText").textContent = status.environment_ready ? "环境就绪，可以向下开始" : "环境异常，请到设置页检查";
+  }
+  if ($("heroStatusBar")) {
+    $("heroStatusBar").style.width = status.environment_ready ? "100%" : "42%";
+  }
 
   if ($("llmProvider")) $("llmProvider").value = status.llm_provider || "openai";
   if ($("llmBaseUrl")) $("llmBaseUrl").value = status.llm_base_url || "";
@@ -227,7 +234,7 @@ function clearMainAnalysis() {
     if (mount.shadowRoot) mount.shadowRoot.innerHTML = "";
     mount.innerHTML = "";
   }
-  if ($("analysisPreview")) $("analysisPreview").textContent = "尚未生成分析。";
+  if ($("selectedHint")) $("selectedHint").textContent = "先选择一个联系人。";
 }
 
 function renderArchives(archives) {
@@ -415,18 +422,21 @@ async function showReport(url) {
 }
 
 function renderContacts() {
-  const q = $("contactSearch").value.trim().toLowerCase();
+  const search = $("contactSearch");
+  const list = $("contactList");
+  if (!search || !list) return;
+  const q = search.value.trim().toLowerCase();
   state.filtered = state.contacts.filter((item) => {
     const text = `${item.display_name || ""} ${item.nick_name || ""} ${item.remark || ""} ${item.username || ""}`.toLowerCase();
     return !q || text.includes(q);
   }).slice(0, 120);
 
   if (!state.filtered.length) {
-    $("contactList").innerHTML = `<div class="report-slot">没有联系人。先完成解密，或换个关键词。</div>`;
+    list.innerHTML = `<div class="contact-empty">没有联系人。点击“开始读取联系人”，或换个关键词。</div>`;
     return;
   }
 
-  $("contactList").innerHTML = state.filtered.map((item, index) => {
+  list.innerHTML = state.filtered.map((item, index) => {
     const name = item.display_name || item.username;
     const selected = state.selected && state.selected.username === item.username;
     return `
@@ -474,7 +484,7 @@ function applyProviderDefaults(provider) {
 const UI_THEMES = ["neon", "cyan", "ember"];
 
 function normalizeUiTheme(theme) {
-  return UI_THEMES.includes(theme) ? theme : "neon";
+  return UI_THEMES.includes(theme) ? theme : "ember";
 }
 
 function applyUiTheme(theme) {
@@ -498,13 +508,16 @@ function maskApiKeyFromPaste(event) {
 }
 
 async function loadContacts() {
-  log("读取联系人列表");
-  const data = await api("/api/contacts", { method: "POST" });
+  log("开始读取联系人：检查环境、解密并扫描微信");
+  if ($("contactSummary")) $("contactSummary").textContent = "正在读取联系人...";
+  const data = await api("/api/discover", { method: "POST" });
+  renderStatus(data.status);
   state.contacts = data.contacts || [];
   state.selected = null;
-  $("extractBtn").disabled = true;
+  if ($("reportBtn")) $("reportBtn").disabled = true;
   renderContacts();
   switchPane("main");
+  if ($("contactSummary")) $("contactSummary").textContent = `已读取 ${state.contacts.length} 个联系人。`;
   log(`读取到 ${state.contacts.length} 个联系人`);
 }
 
@@ -514,7 +527,7 @@ async function discoverWechat() {
   renderStatus(data.status);
   state.contacts = data.contacts || [];
   state.selected = null;
-  $("extractBtn").disabled = true;
+  if ($("reportBtn")) $("reportBtn").disabled = true;
   renderContacts();
   switchPane("main");
   log(`微信识别完成，读取到 ${state.contacts.length} 个联系人`);
@@ -534,7 +547,6 @@ async function runSubtextScan() {
   log("调用模型生成潜台词扫描");
   const data = await api("/api/analyze", { method: "POST", body: { use_llm: true } });
   renderStatus(data.status);
-  $("analysisPreview").textContent = JSON.stringify(data.analysis, null, 2);
   log("analysis.json 已生成", { mode: data.analysis._analysis_mode });
   return data;
 }
@@ -544,7 +556,9 @@ async function analyze() {
 }
 
 async function report() {
-  log("先执行潜台词扫描，再生成报告");
+  if (!state.selected) return;
+  log("提取聊天并生成报告");
+  await extractAndStats();
   await runSubtextScan();
   const data = await api("/api/report", { method: "POST" });
   renderStatus(data.status);
@@ -681,16 +695,16 @@ function initCursorParticles() {
   let last = 0;
   window.addEventListener("pointermove", (event) => {
     const now = performance.now();
-    if (now - last < 26) return;
+    if (now - last < 16) return;
     last = now;
     const dot = document.createElement("i");
     const angle = Math.random() * Math.PI * 2;
-    const distance = 18 + Math.random() * 26;
+    const distance = 26 + Math.random() * 42;
     dot.style.left = `${event.clientX}px`;
     dot.style.top = `${event.clientY}px`;
     dot.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
     dot.style.setProperty("--dy", `${Math.sin(angle) * distance}px`);
-    dot.style.setProperty("--size", `${3 + Math.random() * 5}px`);
+    dot.style.setProperty("--size", `${6 + Math.random() * 8}px`);
     layer.appendChild(dot);
     window.setTimeout(() => dot.remove(), 900);
   }, { passive: true });
@@ -705,13 +719,7 @@ function bind() {
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.addEventListener("click", () => switchPane(button.dataset.step));
   });
-  on("heroStartBtn", "click", () => scrollToPane("pane-main"));
   on("heroScrollCue", "click", () => scrollToPane("pane-main"));
-  on("firstConfigBtn", "click", () => {
-    switchPane("settings");
-    scrollToPane("pane-settings");
-  });
-  on("discoverBtn", "click", () => discoverWechat().catch(handleError));
   on("saveConfigBtn", "click", () => saveConfig().catch(handleError));
   on("llmProvider", "change", (event) => applyProviderDefaults(event.target.value));
   on("llmApiKey", "paste", maskApiKeyFromPaste);
@@ -720,9 +728,6 @@ function bind() {
   });
   on("setupBtn", "click", () => runSetup().catch(handleError));
   on("loadContactsBtn", "click", () => loadContacts().catch(handleError));
-  on("contactsRefreshBtn", "click", () => loadContacts().catch(handleError));
-  on("extractBtn", "click", () => extractAndStats().catch(handleError));
-  on("analyzeBtn", "click", () => analyze().catch(handleError));
   on("reportBtn", "click", () => report().catch(handleError));
   on("quizOptions", "click", (event) => {
     const button = event.target.closest(".quiz-option");
@@ -745,7 +750,11 @@ function bind() {
     const button = event.target.closest(".contact");
     if (!button) return;
     state.selected = state.filtered[Number(button.dataset.index)];
-    $("extractBtn").disabled = false;
+    if ($("reportBtn")) $("reportBtn").disabled = false;
+    if ($("selectedHint")) {
+      const label = state.selected.display_name || state.selected.username;
+      $("selectedHint").textContent = `将分析：${label}`;
+    }
     renderContacts();
   });
   document.querySelectorAll(".theme-choice").forEach((button) => {
@@ -762,8 +771,9 @@ function handleError(error) {
   log(`失败：${error.message}`, detail);
 }
 
-const initialTheme = normalizeUiTheme(localStorage.getItem("ta-ui-theme"));
-localStorage.setItem("ta-ui-theme-v4", "neon-stage");
+const savedTheme = localStorage.getItem("ta-ui-theme");
+const initialTheme = normalizeUiTheme(savedTheme || "ember");
+localStorage.setItem("ta-ui-theme-v4", "ember-stage");
 applyUiTheme(initialTheme);
 bind();
 switchPane("main");

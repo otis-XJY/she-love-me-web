@@ -45,22 +45,22 @@ body.ui-cyan {
 }
 
 body.ui-ember {
-  --bg: #08070c;
-  --bg-2: #1a1017;
-  --panel: rgba(19, 17, 26, .9);
-  --panel-strong: #100e17;
-  --ink: #fff4f0;
-  --ink-soft: #b7a0c7;
-  --muted: #6a557d;
-  --line: rgba(221, 126, 190, .16);
+  --bg: #0d0805;
+  --bg-2: #20100a;
+  --panel: rgba(30, 18, 12, .9);
+  --panel-strong: #130b07;
+  --ink: #fff4e8;
+  --ink-soft: #d6ae88;
+  --muted: #8b6247;
+  --line: rgba(255, 169, 96, .2);
   --accent: #ff8a16;
-  --accent-strong: #ff4ecb;
+  --accent-strong: #ffb45c;
   --accent-ink: #ffffff;
   --good: #48e0a4;
   --danger: #ff4d7d;
-  --hot: #ff8a16;
-  --cool: #22c7ff;
-  --shadow: 0 24px 90px rgba(0, 0, 0, .42);
+  --hot: #ff5a1f;
+  --cool: #ffd08a;
+  --shadow: 0 24px 90px rgba(18, 8, 2, .5);
 }
 
 * { box-sizing: border-box; }
@@ -356,6 +356,37 @@ body[data-pane="main"] .hero-actions {
   margin-top: 4px;
 }
 
+.hero-status {
+  width: min(420px, 72vw);
+  display: grid;
+  gap: 12px;
+  color: var(--ink-soft);
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: .14em;
+}
+
+.hero-status b {
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--ink) 10%, transparent);
+}
+
+.hero-status i {
+  display: block;
+  width: 38%;
+  height: 100%;
+  background: linear-gradient(90deg, var(--hot), var(--accent-strong), var(--cool));
+  box-shadow: 0 0 22px color-mix(in srgb, var(--accent) 50%, transparent);
+  animation: statusScan 1.2s var(--ease-out-expo) infinite alternate;
+  transition: width .55s var(--ease-out-expo);
+}
+
+body.environment-ready .hero-status i {
+  animation: none;
+}
+
 body[data-pane="main"].pane-changing .hero-actions {
   animation: actionReveal .54s var(--ease-out-expo) .08s both;
 }
@@ -376,13 +407,13 @@ body[data-pane="main"] .hero-cta.secondary {
   display: none;
 }
 
-body[data-pane="main"] .scroll-cue {
+body.environment-ready[data-pane="main"] .scroll-cue {
   position: absolute;
   left: 50%;
   bottom: clamp(28px, 5vh, 48px);
   display: inline-flex;
   min-height: auto;
-  padding: 0 0 18px;
+  padding: 0 0 32px;
   border: 0;
   background: transparent;
   color: var(--ink-soft);
@@ -390,6 +421,7 @@ body[data-pane="main"] .scroll-cue {
   font-weight: 800;
   letter-spacing: .16em;
   transform: translateX(-50%);
+  animation: cueFloat 1.7s var(--ease-out-expo) infinite;
 }
 
 body[data-pane="main"] .scroll-cue::after {
@@ -401,6 +433,20 @@ body[data-pane="main"] .scroll-cue::after {
   height: 34px;
   background: linear-gradient(var(--accent-strong), transparent);
   animation: scrollCue 1.7s var(--ease-out-expo) infinite;
+}
+
+body[data-pane="main"] .scroll-cue::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  width: 12px;
+  height: 12px;
+  border-right: 2px solid var(--accent-strong);
+  border-bottom: 2px solid var(--accent-strong);
+  transform: translateX(-50%) rotate(45deg);
+  box-shadow: 0 0 16px color-mix(in srgb, var(--accent) 50%, transparent);
+  animation: arrowDrop 1.7s var(--ease-out-expo) infinite;
 }
 
 .hero-panel h2 {
@@ -447,10 +493,26 @@ body[data-pane="main"] .hero-panel h2 {
   to { opacity: 1; transform: translateY(0); }
 }
 
+@keyframes statusScan {
+  from { transform: translateX(-18%); opacity: .66; }
+  to { transform: translateX(18%); opacity: 1; }
+}
+
 @keyframes scrollCue {
   0% { opacity: 0; transform: translateY(-10px); }
   35% { opacity: 1; }
   100% { opacity: 0; transform: translateY(14px); }
+}
+
+@keyframes cueFloat {
+  0%, 100% { opacity: .55; transform: translate(-50%, -4px); }
+  50% { opacity: 1; transform: translate(-50%, 4px); }
+}
+
+@keyframes arrowDrop {
+  0% { opacity: 0; transform: translate(-50%, -8px) rotate(45deg); }
+  35% { opacity: 1; }
+  100% { opacity: 0; transform: translate(-50%, 10px) rotate(45deg); }
 }
 
 .reveal-item {
@@ -468,7 +530,7 @@ body[data-pane="main"] .hero-panel h2 {
 
 .workflow-board {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: .82fr 1.35fr .82fr;
   gap: 16px;
 }
 
@@ -505,6 +567,19 @@ body[data-pane="main"] .hero-panel h2 {
   line-height: 1.05;
   letter-spacing: -.05em;
   margin: 8px 0 14px;
+}
+
+.flow-copy,
+.flow-hint {
+  color: var(--ink-soft);
+  line-height: 1.7;
+}
+
+.flow-hint {
+  margin-top: 18px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
 }
 
 .actions {
@@ -612,8 +687,9 @@ select:focus {
 
 .contact-list {
   display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
-  max-height: 330px;
+  max-height: 430px;
   overflow: auto;
   padding-right: 4px;
 }
@@ -621,9 +697,11 @@ select:focus {
 .contact {
   display: block;
   width: 100%;
-  min-height: 82px;
+  min-width: 0;
+  min-height: 76px;
   text-align: left;
   background: color-mix(in srgb, var(--panel) 88%, transparent);
+  overflow: hidden;
 }
 
 .contact strong {
@@ -637,14 +715,24 @@ select:focus {
 
 .contact span {
   display: block;
+  overflow: hidden;
   color: var(--muted);
   font-size: 12px;
   margin-top: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .contact.selected {
   border-color: var(--accent-strong);
   background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+}
+
+.contact-empty {
+  grid-column: 1 / -1;
+  border: 1px solid var(--line);
+  padding: 18px;
+  color: var(--ink-soft);
 }
 
 .switch {
@@ -1136,10 +1224,14 @@ select:focus {
   width: var(--size);
   height: var(--size);
   border-radius: 999px;
-  background: radial-gradient(circle, var(--accent-strong), transparent 70%);
-  box-shadow: 0 0 14px color-mix(in srgb, var(--accent) 50%, transparent);
+  background:
+    radial-gradient(circle, #fff6d8 0 14%, var(--accent-strong) 22%, var(--accent) 48%, transparent 74%);
+  box-shadow:
+    0 0 12px color-mix(in srgb, var(--accent-strong) 85%, transparent),
+    0 0 30px color-mix(in srgb, var(--accent) 72%, transparent);
   transform: translate(-50%, -50%);
-  animation: cursorParticle .88s var(--ease-out-expo) forwards;
+  mix-blend-mode: screen;
+  animation: cursorParticle 1.05s var(--ease-out-expo) forwards;
 }
 
 @keyframes cursorParticle {
@@ -1192,6 +1284,7 @@ select:focus {
     padding: 18px;
   }
   .contact-toolbar,
+  .contact-list,
   .quiz-grid,
   .config-grid,
   .theme-grid {

@@ -26,6 +26,11 @@ DATA_ROOT = RUNTIME_ROOT / "data"
 REPORTS_ROOT = RUNTIME_ROOT / "reports"
 ARCHIVES_ROOT = RUNTIME_ROOT / "archives"
 DECRYPTED_ROOT = RUNTIME_ROOT / "vendor" / "wechat-decrypt" / "decrypted"
+LOCAL_CONFIG_ROOT = Path(os.environ.get(
+    "SHE_LOVE_ME_CONFIG_DIR",
+    Path(os.environ.get("LOCALAPPDATA", PROJECT_ROOT / ".local")) / "TAHuiwole",
+)).resolve()
+LOCAL_CONFIG_FILE = LOCAL_CONFIG_ROOT / "config.json"
 
 HOST = os.environ.get("SHE_LOVE_ME_HOST", "127.0.0.1")
 PORT = int(os.environ.get("SHE_LOVE_ME_PORT", "8765"))
@@ -48,6 +53,53 @@ LLM_HTTP_HEADERS = {
 DEFAULT_MAX_CHAT_CHARS = int(os.environ.get("SHE_LOVE_ME_MAX_CHAT_CHARS", "60000"))
 RETRY_MAX_CHAT_CHARS = int(os.environ.get("SHE_LOVE_ME_RETRY_CHAT_CHARS", "24000"))
 LLM_MAX_OUTPUT_TOKENS = int(os.environ.get("SHE_LOVE_ME_LLM_MAX_OUTPUT_TOKENS", "1800"))
+
+
+def load_local_config() -> None:
+    if not LOCAL_CONFIG_FILE.exists():
+        return
+    try:
+        data = json.loads(LOCAL_CONFIG_FILE.read_text(encoding="utf-8"))
+        llm = data.get("llm", data) if isinstance(data, dict) else {}
+        if not isinstance(llm, dict):
+            return
+        env_keys = {
+            "provider": "SHE_LOVE_ME_LLM_PROVIDER",
+            "base_url": "SHE_LOVE_ME_LLM_BASE_URL",
+            "api_key": "SHE_LOVE_ME_LLM_API_KEY",
+            "model": "SHE_LOVE_ME_LLM_MODEL",
+        }
+        for key, env_name in env_keys.items():
+            value = str(llm.get(key, "")).strip()
+            if value and not os.environ.get(env_name):
+                LLM_CONFIG[key] = value
+        if LLM_CONFIG.get("provider") not in PROVIDER_DEFAULTS:
+            LLM_CONFIG["provider"] = "openai"
+    except Exception:
+        return
+
+
+def save_local_config() -> None:
+    LOCAL_CONFIG_ROOT.mkdir(parents=True, exist_ok=True)
+    payload = {
+        "updated_at": datetime.now().isoformat(timespec="seconds"),
+        "llm": {
+            "provider": LLM_CONFIG.get("provider", "openai"),
+            "base_url": LLM_CONFIG.get("base_url", ""),
+            "model": LLM_CONFIG.get("model", ""),
+            "api_key": LLM_CONFIG.get("api_key", ""),
+        },
+    }
+    temp_path = LOCAL_CONFIG_FILE.with_suffix(".tmp")
+    temp_path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    try:
+        os.chmod(temp_path, 0o600)
+    except OSError:
+        pass
+    temp_path.replace(LOCAL_CONFIG_FILE)
+
+
+load_local_config()
 
 
 class AppError(Exception):
@@ -280,6 +332,8 @@ def build_status() -> dict[str, Any]:
         "llm_model": LLM_CONFIG.get("model", ""),
         "llm_base_url": LLM_CONFIG.get("base_url", ""),
         "llm_key_hint": f"已设置 · ****{llm_key[-4:]}" if llm_key else "未设置",
+        "llm_config_path": str(LOCAL_CONFIG_FILE),
+        "llm_config_persisted": LOCAL_CONFIG_FILE.exists(),
     }
 
 
@@ -306,6 +360,7 @@ def update_llm_config(payload: dict[str, Any]) -> dict[str, str]:
         LLM_CONFIG["model"] = PROVIDER_DEFAULTS[provider]["model"]
     if api_key:
         LLM_CONFIG["api_key"] = api_key
+    save_local_config()
 
     return {
         "provider": LLM_CONFIG.get("provider", "openai"),
@@ -337,6 +392,7 @@ def normalize_llm_payload(payload: dict[str, Any], persist: bool = False) -> dic
     config = {"provider": provider, "base_url": base_url, "model": model, "api_key": api_key}
     if persist:
         LLM_CONFIG.update(config)
+        save_local_config()
     return config
 
 

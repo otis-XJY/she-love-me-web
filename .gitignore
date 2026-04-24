@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .env
+.local/
 runtime/she-love-me/vendor/
 runtime/she-love-me/data/
 runtime/she-love-me/reports/

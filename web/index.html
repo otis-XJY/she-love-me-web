@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TA回我了 - 微信恋爱分析</title>
-  <link rel="stylesheet" href="styles.css?v=20260424-11">
+  <link rel="stylesheet" href="styles.css?v=20260425-1">
 </head>
 <body>
   <header class="top-nav">
@@ -31,8 +31,9 @@
         </div>
         <div class="hero-content">
           <h2 id="panelTitle">分析主线</h2>
+          <p class="hero-subtitle">TA must have fallen in love with me.</p>
           <div class="hero-status" id="heroStatus">
-            <span id="heroStatusText">正在检测本地环境</span>
+            <span id="heroStatusText"></span>
             <b><i id="heroStatusBar"></i></b>
           </div>
         </div>
@@ -65,9 +66,14 @@
             <div class="workflow-card report-card">
               <h3>生成报告</h3>
               <p class="flow-copy" id="selectedHint">先选择一个联系人。</p>
+              <div class="analysis-progress" id="analysisProgress" hidden>
+                <span id="analysisProgressText">准备分析</span>
+                <b><i id="analysisProgressBar"></i></b>
+              </div>
               <div class="actions">
                 <button class="primary" id="reportBtn" disabled>生成结果分析报告</button>
               </div>
+              <button class="scroll-report-cue" id="scrollReportCue" type="button" hidden>向下滑动查看报告</button>
             </div>
           </section>
 
@@ -143,9 +149,9 @@
           <section class="theme-panel">
             <h4>颜色风格</h4>
             <div class="theme-grid">
-              <button class="theme-choice" data-theme="neon"><span>I.</span>霓虹紫</button>
+              <button class="theme-choice active" data-theme="neon"><span>I.</span>霓虹紫</button>
               <button class="theme-choice" data-theme="cyan"><span>II.</span>电光蓝</button>
-              <button class="theme-choice active" data-theme="ember"><span>III.</span>暖焰橙</button>
+              <button class="theme-choice" data-theme="ember"><span>III.</span>暖焰橙</button>
             </div>
           </section>
         </article>
@@ -167,6 +173,6 @@
     <a href="https://github.com/Exekiel179/she-love-me-web" target="_blank" rel="noreferrer">github.com/Exekiel179/she-love-me-web</a>
   </footer>
 
-  <script src="app.js?v=20260424-11"></script>
+  <script src="app.js?v=20260425-1"></script>
 </body>
 </html>

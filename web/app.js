@@ -12,6 +12,7 @@ const state = {
   quizDone: false,
   heroSlideIndex: 0,
   heroScrollLocked: false,
+  lastScrollY: 0,
   touchStartY: 0,
 };
 
@@ -188,17 +189,35 @@ function scrollToPane(id) {
   });
 }
 
+function scrollToElementCenter(element) {
+  if (!element) return;
+  const rect = element.getBoundingClientRect();
+  const target = window.scrollY + rect.top - Math.max(24, (window.innerHeight - rect.height) / 2);
+  window.scrollTo({ top: Math.max(0, target), behavior: "smooth" });
+}
+
+function scrollToWorkflow() {
+  scrollToElementCenter(document.querySelector(".workflow-board"));
+}
+
+function scrollToReportPanel() {
+  const panel = document.querySelector(".report-panel");
+  if (!panel) return;
+  window.scrollTo({ top: Math.max(0, window.scrollY + panel.getBoundingClientRect().top - 88), behavior: "smooth" });
+}
+
 function jumpFromHero() {
   if (document.body.dataset.pane !== "main") return;
   if (state.heroScrollLocked) return;
   if (window.scrollY > 90) return;
   state.heroScrollLocked = true;
   document.body.classList.add("hero-leaving");
-  scrollToPane("pane-main");
+  document.body.classList.add("nav-hidden");
+  scrollToWorkflow();
   window.setTimeout(() => {
     state.heroScrollLocked = false;
     document.body.classList.remove("hero-leaving");
-  }, 950);
+  }, 900);
 }
 
 function renderStatus(status, options = {}) {
@@ -212,7 +231,7 @@ function renderStatus(status, options = {}) {
   }
   document.body.classList.toggle("environment-ready", Boolean(status.environment_ready));
   if ($("heroStatusText")) {
-    $("heroStatusText").textContent = status.environment_ready ? "环境就绪，可以向下开始" : "环境异常，请到设置页检查";
+    $("heroStatusText").textContent = status.environment_ready ? "" : "环境异常";
   }
   if ($("heroStatusBar")) {
     $("heroStatusBar").style.width = status.environment_ready ? "100%" : "42%";
@@ -234,6 +253,7 @@ function renderStatus(status, options = {}) {
 
 function clearMainAnalysis() {
   state.latestReportUrl = "";
+  document.body.classList.remove("report-ready", "analysis-running");
   const openReport = $("openReport");
   if (openReport) {
     openReport.href = "#";
@@ -250,6 +270,8 @@ function clearMainAnalysis() {
     mount.innerHTML = "";
   }
   if ($("selectedHint")) $("selectedHint").textContent = "先选择一个联系人。";
+  setAnalysisProgress(0, "", { hidden: true });
+  if ($("scrollReportCue")) $("scrollReportCue").hidden = true;
 }
 
 function renderArchives(archives) {
@@ -311,6 +333,10 @@ async function deleteArchive(item) {
 function setReport(report, options = {}) {
   const url = `${API_BASE}${encodeURI(report.url)}`;
   state.latestReportUrl = url;
+  if (!options.silent) {
+    document.body.classList.add("report-ready");
+    document.body.classList.remove("analysis-running", "nav-hidden");
+  }
   const openReport = $("openReport");
   if (openReport) {
     openReport.href = url;
@@ -321,6 +347,10 @@ function setReport(report, options = {}) {
   $("reportSlot").innerHTML = `当前报告：<button class="inline-report-link" id="reloadReportBtn">${esc(report.name)}</button>`;
   $("reloadReportBtn")?.addEventListener("click", () => showReport(url));
   showReport(url).catch(handleError);
+  if (!options.silent) {
+    setAnalysisProgress(100, "分析完成", { done: true });
+    if ($("scrollReportCue")) $("scrollReportCue").hidden = false;
+  }
   if (!options.silent) log("报告已载入当前页面。");
 }
 
@@ -499,7 +529,7 @@ function applyProviderDefaults(provider) {
 const UI_THEMES = ["neon", "cyan", "ember"];
 
 function normalizeUiTheme(theme) {
-  return UI_THEMES.includes(theme) ? theme : "ember";
+  return UI_THEMES.includes(theme) ? theme : "neon";
 }
 
 function applyUiTheme(theme) {
@@ -548,13 +578,16 @@ async function discoverWechat() {
   log(`微信识别完成，读取到 ${state.contacts.length} 个联系人`);
 }
 
-async function extractAndStats() {
+async function extractAndStats(onProgress) {
   if (!state.selected) return;
   const contact = state.selected.display_name || state.selected.username;
   log(`提取联系人：${contact}`);
+  onProgress?.(18, "正在提取聊天记录");
   const extracted = await api("/api/extract", { method: "POST", body: { contact } });
+  onProgress?.(38, "正在计算互动统计");
   log("消息提取完成", extracted.result.json || extracted.result.stderr);
   const stats = await api("/api/stats", { method: "POST" });
+  onProgress?.(52, "互动统计完成");
   log("统计完成", stats.stats.scores || stats.result.stdout);
 }
 
@@ -570,14 +603,35 @@ async function analyze() {
   await runSubtextScan();
 }
 
+function setAnalysisProgress(percent, text, options = {}) {
+  const box = $("analysisProgress");
+  const bar = $("analysisProgressBar");
+  const label = $("analysisProgressText");
+  if (!box || !bar || !label) return;
+  const value = Math.max(0, Math.min(100, Number(percent) || 0));
+  box.hidden = Boolean(options.hidden);
+  box.classList.toggle("done", Boolean(options.done));
+  bar.style.width = `${value}%`;
+  label.textContent = text || "";
+}
+
 async function report() {
   if (!state.selected) return;
   log("提取聊天并生成报告");
-  await extractAndStats();
+  document.body.classList.add("analysis-running");
+  document.body.classList.remove("report-ready");
+  setAnalysisProgress(8, "准备读取聊天记录");
+  if ($("scrollReportCue")) $("scrollReportCue").hidden = true;
+  scrollToWorkflow();
+  await extractAndStats(setAnalysisProgress);
+  setAnalysisProgress(64, "正在生成潜台词扫描");
   await runSubtextScan();
+  setAnalysisProgress(78, "潜台词扫描完成");
   const data = await api("/api/report", { method: "POST" });
+  setAnalysisProgress(92, "正在渲染结果分析报告");
   renderStatus(data.status);
   setReport(data.report);
+  scrollToWorkflow();
   log("报告已生成", data.report);
 }
 
@@ -704,34 +758,107 @@ function initHeroSlides() {
 function initCursorParticles() {
   if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
   if (window.matchMedia("(pointer: coarse)").matches) return;
-  const layer = document.createElement("div");
-  layer.className = "cursor-particles";
-  document.body.appendChild(layer);
-  let last = 0;
-  window.addEventListener("pointermove", (event) => {
-    const now = performance.now();
-    if (now - last < 16) return;
-    last = now;
-    const dot = document.createElement("i");
-    const angle = Math.random() * Math.PI * 2;
-    const distance = 26 + Math.random() * 42;
-    dot.style.left = `${event.clientX}px`;
-    dot.style.top = `${event.clientY}px`;
-    dot.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
-    dot.style.setProperty("--dy", `${Math.sin(angle) * distance}px`);
-    dot.style.setProperty("--size", `${6 + Math.random() * 8}px`);
-    layer.appendChild(dot);
-    window.setTimeout(() => dot.remove(), 900);
-  }, { passive: true });
+  const canvas = document.createElement("canvas");
+  canvas.className = "cursor-particles";
+  canvas.setAttribute("aria-hidden", "true");
+  document.body.appendChild(canvas);
+  const context = canvas.getContext("2d");
+  if (!context) return;
+  const particles = [];
+  const pointer = { x: 0, y: 0, mx: 0, my: 0 };
+  let frame = 0;
+
+  function resize() {
+    const ratio = window.devicePixelRatio || 1;
+    canvas.width = window.innerWidth * ratio;
+    canvas.height = window.innerHeight * ratio;
+    canvas.style.width = `${window.innerWidth}px`;
+    canvas.style.height = `${window.innerHeight}px`;
+    context.setTransform(ratio, 0, 0, ratio, 0, 0);
+  }
+
+  function addParticles(event, count, burst = 1) {
+    pointer.x = event.clientX;
+    pointer.y = event.clientY;
+    pointer.mx = event.movementX || 0;
+    pointer.my = event.movementY || 0;
+    const velocity = Math.max(1, Math.hypot(pointer.mx, pointer.my));
+    for (let index = 0; index < count; index += 1) {
+      const angle = Math.random() * Math.PI * 2;
+      const speed = (1.2 + Math.random() * 4.8) * burst + Math.min(velocity * .035, 2.6);
+      const hue = (performance.now() * .09 + pointer.x * .14 + pointer.y * .08 + index * 28) % 360;
+      particles.push({
+        x: pointer.x,
+        y: pointer.y,
+        vx: Math.cos(angle) * speed - pointer.mx * .045,
+        vy: Math.sin(angle) * speed - pointer.my * .045,
+        size: 1.6 + Math.random() * 3.8 * burst,
+        decay: .035 + Math.random() * .025,
+        hue,
+        alpha: .42 + Math.random() * .28,
+      });
+    }
+    if (particles.length > 520) particles.splice(0, particles.length - 520);
+  }
+
+  function draw() {
+    frame = window.requestAnimationFrame(draw);
+    context.clearRect(0, 0, window.innerWidth, window.innerHeight);
+    context.globalCompositeOperation = "lighter";
+    for (let index = particles.length - 1; index >= 0; index -= 1) {
+      const particle = particles[index];
+      const gradient = context.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, particle.size * 3.2);
+      gradient.addColorStop(0, `hsla(${particle.hue}, 100%, 84%, ${particle.alpha})`);
+      gradient.addColorStop(.38, `hsla(${(particle.hue + 70) % 360}, 100%, 62%, ${particle.alpha * .72})`);
+      gradient.addColorStop(1, "rgba(0,0,0,0)");
+      context.fillStyle = gradient;
+      context.beginPath();
+      context.arc(particle.x, particle.y, particle.size * 3.2, 0, Math.PI * 2);
+      context.fill();
+      particle.x += particle.vx;
+      particle.y += particle.vy;
+      particle.vx *= .96;
+      particle.vy *= .96;
+      particle.size -= particle.decay;
+      particle.alpha *= .974;
+      if (particle.size <= .18 || particle.alpha <= .02) particles.splice(index, 1);
+    }
+  }
+
+  resize();
+  window.addEventListener("resize", resize);
+  window.addEventListener("pointermove", (event) => addParticles(event, 9), { passive: true });
+  window.addEventListener("click", (event) => addParticles(event, 90, 1.8), { passive: true });
+  frame = window.requestAnimationFrame(draw);
 }
 
 function initHeroScrollTrigger() {
+  function handleDownScroll(event) {
+    if (document.body.dataset.pane !== "main") return false;
+    if (state.heroScrollLocked) return true;
+    const workflow = document.querySelector(".workflow-board");
+    const reportPanel = document.querySelector(".report-panel");
+    const workflowRect = workflow?.getBoundingClientRect();
+    const reportRect = reportPanel?.getBoundingClientRect();
+    if (window.scrollY <= 90) {
+      event.preventDefault();
+      jumpFromHero();
+      return true;
+    }
+    if (workflowRect && reportRect && workflowRect.top < window.innerHeight * .58 && reportRect.top > window.innerHeight * .78) {
+      event.preventDefault();
+      state.heroScrollLocked = true;
+      document.body.classList.add("nav-hidden");
+      scrollToReportPanel();
+      window.setTimeout(() => { state.heroScrollLocked = false; }, 820);
+      return true;
+    }
+    return false;
+  }
+
   window.addEventListener("wheel", (event) => {
-    if (event.deltaY <= 8) return;
-    if (document.body.dataset.pane !== "main") return;
-    if (window.scrollY > 90) return;
-    event.preventDefault();
-    jumpFromHero();
+    if (event.deltaY > 8) handleDownScroll(event);
+    if (event.deltaY < -8) document.body.classList.remove("nav-hidden");
   }, { passive: false });
 
   window.addEventListener("touchstart", (event) => {
@@ -739,13 +866,22 @@ function initHeroScrollTrigger() {
   }, { passive: true });
 
   window.addEventListener("touchmove", (event) => {
-    if (document.body.dataset.pane !== "main") return;
-    if (window.scrollY > 90) return;
     const currentY = event.touches[0]?.clientY || 0;
-    if (state.touchStartY - currentY <= 14) return;
-    event.preventDefault();
-    jumpFromHero();
+    if (state.touchStartY - currentY > 14) handleDownScroll(event);
+    if (currentY - state.touchStartY > 14) document.body.classList.remove("nav-hidden");
   }, { passive: false });
+
+  window.addEventListener("scroll", () => {
+    const current = window.scrollY;
+    if (document.body.classList.contains("report-ready")) {
+      document.body.classList.remove("nav-hidden");
+      state.lastScrollY = current;
+      return;
+    }
+    if (current > state.lastScrollY + 8 && current > 88) document.body.classList.add("nav-hidden");
+    if (current < state.lastScrollY - 8) document.body.classList.remove("nav-hidden");
+    state.lastScrollY = current;
+  }, { passive: true });
 }
 
 function bind() {
@@ -757,7 +893,8 @@ function bind() {
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.addEventListener("click", () => switchPane(button.dataset.step));
   });
-  on("heroScrollCue", "click", () => scrollToPane("pane-main"));
+  on("heroScrollCue", "click", jumpFromHero);
+  on("scrollReportCue", "click", scrollToReportPanel);
   on("saveConfigBtn", "click", () => saveConfig().catch(handleError));
   on("llmProvider", "change", (event) => applyProviderDefaults(event.target.value));
   on("llmApiKey", "paste", maskApiKeyFromPaste);
@@ -807,12 +944,15 @@ function bind() {
 
 function handleError(error) {
   const detail = error.data?.details || error.message;
+  document.body.classList.remove("analysis-running");
+  setAnalysisProgress(0, "分析失败，请查看后台记录");
   log(`失败：${error.message}`, detail);
 }
 
-const savedTheme = localStorage.getItem("ta-ui-theme");
-const initialTheme = normalizeUiTheme(savedTheme || "ember");
-localStorage.setItem("ta-ui-theme-v4", "ember-stage");
+const themeVersion = "neon-stage-v5";
+const savedTheme = localStorage.getItem("ta-ui-theme-version") === themeVersion ? localStorage.getItem("ta-ui-theme") : "";
+const initialTheme = normalizeUiTheme(savedTheme || "neon");
+localStorage.setItem("ta-ui-theme-version", themeVersion);
 applyUiTheme(initialTheme);
 bind();
 switchPane("main");

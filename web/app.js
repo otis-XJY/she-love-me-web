@@ -761,12 +761,25 @@ function initCursorParticles() {
   const canvas = document.createElement("canvas");
   canvas.className = "cursor-particles";
   canvas.setAttribute("aria-hidden", "true");
+  const mask = document.createElement("div");
+  mask.className = "clown-cursor";
+  mask.setAttribute("aria-hidden", "true");
+  mask.innerHTML = "<i></i><i></i><b></b><em></em>";
   document.body.appendChild(canvas);
+  document.body.appendChild(mask);
   const context = canvas.getContext("2d");
   if (!context) return;
   const particles = [];
   const pointer = { x: 0, y: 0, mx: 0, my: 0 };
+  const palette = [
+    { hue: 313, sat: 92, light: 64 },
+    { hue: 284, sat: 88, light: 68 },
+    { hue: 195, sat: 96, light: 62 },
+    { hue: 36, sat: 100, light: 62 },
+  ];
   let frame = 0;
+  let maskX = window.innerWidth / 2;
+  let maskY = window.innerHeight / 2;
 
   function resize() {
     const ratio = window.devicePixelRatio || 1;
@@ -782,53 +795,65 @@ function initCursorParticles() {
     pointer.y = event.clientY;
     pointer.mx = event.movementX || 0;
     pointer.my = event.movementY || 0;
+    const rotate = Math.max(-16, Math.min(16, pointer.mx * .42));
+    mask.style.setProperty("--x", `${pointer.x}px`);
+    mask.style.setProperty("--y", `${pointer.y}px`);
+    mask.style.setProperty("--r", `${rotate}deg`);
     const velocity = Math.max(1, Math.hypot(pointer.mx, pointer.my));
     for (let index = 0; index < count; index += 1) {
       const angle = Math.random() * Math.PI * 2;
-      const speed = (1.2 + Math.random() * 4.8) * burst + Math.min(velocity * .035, 2.6);
-      const hue = (performance.now() * .09 + pointer.x * .14 + pointer.y * .08 + index * 28) % 360;
+      const speed = (0.8 + Math.random() * 3.2) * burst + Math.min(velocity * .024, 1.8);
+      const color = palette[index % (burst > 1.2 ? palette.length : 3)];
       particles.push({
-        x: pointer.x,
-        y: pointer.y,
-        vx: Math.cos(angle) * speed - pointer.mx * .045,
-        vy: Math.sin(angle) * speed - pointer.my * .045,
-        size: 1.6 + Math.random() * 3.8 * burst,
-        decay: .035 + Math.random() * .025,
-        hue,
-        alpha: .42 + Math.random() * .28,
+        x: pointer.x - pointer.mx * .7,
+        y: pointer.y - pointer.my * .7,
+        vx: Math.cos(angle) * speed - pointer.mx * .03,
+        vy: Math.sin(angle) * speed - pointer.my * .03,
+        size: 1.2 + Math.random() * 2.7 * burst,
+        decay: .03 + Math.random() * .022,
+        hue: color.hue + (Math.random() - .5) * 10,
+        sat: color.sat,
+        light: color.light,
+        alpha: .28 + Math.random() * .22,
       });
     }
-    if (particles.length > 520) particles.splice(0, particles.length - 520);
+    if (particles.length > 360) particles.splice(0, particles.length - 360);
   }
 
   function draw() {
     frame = window.requestAnimationFrame(draw);
     context.clearRect(0, 0, window.innerWidth, window.innerHeight);
     context.globalCompositeOperation = "lighter";
+    maskX += (pointer.x - maskX) * .38;
+    maskY += (pointer.y - maskY) * .38;
+    mask.style.transform = `translate(${maskX}px, ${maskY}px) translate(-50%, -50%) rotate(var(--r, 0deg))`;
     for (let index = particles.length - 1; index >= 0; index -= 1) {
       const particle = particles[index];
-      const gradient = context.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, particle.size * 3.2);
-      gradient.addColorStop(0, `hsla(${particle.hue}, 100%, 84%, ${particle.alpha})`);
-      gradient.addColorStop(.38, `hsla(${(particle.hue + 70) % 360}, 100%, 62%, ${particle.alpha * .72})`);
+      const radius = particle.size * 3;
+      const gradient = context.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, radius);
+      gradient.addColorStop(0, `hsla(${particle.hue}, ${particle.sat}%, 88%, ${particle.alpha})`);
+      gradient.addColorStop(.45, `hsla(${particle.hue}, ${particle.sat}%, ${particle.light}%, ${particle.alpha * .56})`);
       gradient.addColorStop(1, "rgba(0,0,0,0)");
       context.fillStyle = gradient;
       context.beginPath();
-      context.arc(particle.x, particle.y, particle.size * 3.2, 0, Math.PI * 2);
+      context.arc(particle.x, particle.y, radius, 0, Math.PI * 2);
       context.fill();
       particle.x += particle.vx;
       particle.y += particle.vy;
-      particle.vx *= .96;
-      particle.vy *= .96;
+      particle.vx *= .955;
+      particle.vy *= .955;
       particle.size -= particle.decay;
-      particle.alpha *= .974;
+      particle.alpha *= .968;
       if (particle.size <= .18 || particle.alpha <= .02) particles.splice(index, 1);
     }
   }
 
   resize();
   window.addEventListener("resize", resize);
-  window.addEventListener("pointermove", (event) => addParticles(event, 9), { passive: true });
-  window.addEventListener("click", (event) => addParticles(event, 90, 1.8), { passive: true });
+  window.addEventListener("pointermove", (event) => addParticles(event, 5), { passive: true });
+  window.addEventListener("pointerdown", () => mask.classList.add("pressed"), { passive: true });
+  window.addEventListener("pointerup", () => mask.classList.remove("pressed"), { passive: true });
+  window.addEventListener("click", (event) => addParticles(event, 56, 1.65), { passive: true });
   frame = window.requestAnimationFrame(draw);
 }
 

@@ -7,6 +7,10 @@ const state = {
   logs: [],
   latestReportUrl: "",
   pendingApiKey: "",
+  quizIndex: 0,
+  quizAnswers: [],
+  quizDone: false,
+  heroSlideIndex: 0,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -23,6 +27,105 @@ const PANE_META = {
   personality: "恋爱人格",
   settings: "设置",
 };
+const ROMAN = ["I.", "II.", "III.", "IV.", "V.", "VI.", "VII.", "VIII.", "IX.", "X."];
+const QUIZ_QUESTIONS = [
+  {
+    question: "对方三个小时后回“刚忙完”，你的第一反应是？",
+    options: [
+      "松一口气。TA只是忙，逻辑合理。",
+      "怀疑。谁会刚好忙到这个点？",
+      "无所谓。我还没看手机。",
+      "慌。先在备忘录写三版回复。",
+    ],
+  },
+  {
+    question: "连续两天都是你主动开启话题，你会怎么处理？",
+    options: [
+      "照常聊。关系需要稳定投入。",
+      "停一下。我要看TA会不会主动找我。",
+      "换个节奏。没必要把聊天当考核。",
+      "反复检查上一句是不是说错了。",
+    ],
+  },
+  {
+    question: "TA发来一句很短的“嗯嗯”，你更容易读成什么？",
+    options: [
+      "只是简短确认，不代表态度变差。",
+      "温度下降了，可能在敷衍。",
+      "信息量太少，先不解读。",
+      "我需要补一句，把场面救回来。",
+    ],
+  },
+  {
+    question: "你最舒服的恋爱沟通频率是？",
+    options: [
+      "每天有稳定交流，哪怕很短。",
+      "最好频繁一点，不然会没有安全感。",
+      "双方自然来，不需要固定打卡。",
+      "取决于对方热不热，我会跟着调整。",
+    ],
+  },
+  {
+    question: "对方临时取消见面，你第一步会做什么？",
+    options: [
+      "问清原因，再一起改时间。",
+      "判断是不是借口，先观察态度。",
+      "接受变化，安排自己的事。",
+      "忍住情绪，但心里已经排练很多句。",
+    ],
+  },
+  {
+    question: "看到TA在线但没回你，你通常会？",
+    options: [
+      "先做自己的事，晚点再看。",
+      "开始推测TA在回谁。",
+      "不太在意，在线不等于要回复。",
+      "反复点开聊天框，又假装没事。",
+    ],
+  },
+  {
+    question: "你更希望关系里的主动权是什么状态？",
+    options: [
+      "互相主动，节奏清楚。",
+      "TA多给一点确定性，我才放心。",
+      "不用谈主动权，舒服就继续。",
+      "我会主动，但希望看起来不太主动。",
+    ],
+  },
+  {
+    question: "发生误会时，你最自然的处理方式是？",
+    options: [
+      "直接说清楚，避免越想越乱。",
+      "先看对方有没有解释意愿。",
+      "冷静一会儿，等情绪降下来再谈。",
+      "写很多话，但真正发出去会删掉一半。",
+    ],
+  },
+  {
+    question: "如果TA突然变得很热情，你会怎么感受？",
+    options: [
+      "开心，也会顺着回应。",
+      "警觉。是不是有什么原因？",
+      "看整体，不被一两天带着走。",
+      "兴奋，但又怕自己表现得太明显。",
+    ],
+  },
+  {
+    question: "你最想从这段关系里确认什么？",
+    options: [
+      "我们是不是在认真靠近彼此。",
+      "TA到底有没有把我放在重要位置。",
+      "这段相处是否让我更自在。",
+      "我该怎么回复，才不会失去优势。",
+    ],
+  },
+];
+const QUIZ_TYPES = [
+  { name: "稳定靠近型", text: "你更看重持续投入和清楚表达，适合用稳定节奏推进关系。" },
+  { name: "高敏侦测型", text: "你会快速捕捉温度变化，优势是敏锐，风险是过度解读。" },
+  { name: "低卷观察型", text: "你更重视自洽和边界，不轻易被单次互动牵着走。" },
+  { name: "预演回复型", text: "你擅长斟酌表达，但也容易在发送前消耗太多情绪。" },
+];
 
 function esc(value) {
   return String(value ?? "")
@@ -69,9 +172,18 @@ function switchPane(name) {
   const aliases = { setup: "settings", decrypt: "main", contact: "main", analysis: "main", report: "main" };
   name = aliases[name] || name;
   document.body.dataset.pane = name;
+  document.body.classList.remove("pane-changing");
+  void document.body.offsetWidth;
+  document.body.classList.add("pane-changing");
   document.querySelectorAll(".nav-item").forEach((el) => el.classList.toggle("active", el.dataset.step === name));
   document.querySelectorAll(".pane").forEach((el) => el.classList.toggle("visible", el.id === `pane-${name}`));
   $("panelTitle").textContent = PANE_META[name] || PANE_META.main;
+}
+
+function scrollToPane(id) {
+  requestAnimationFrame(() => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 }
 
 function renderStatus(status, options = {}) {
@@ -217,6 +329,60 @@ function adaptReportCss(css, bodyClass) {
     `);
 }
 
+function reportEnhancementCss() {
+  return `
+    .glass-title {
+      position: relative;
+      display: inline-block;
+      isolation: isolate;
+    }
+    .glass-title::after {
+      content: "";
+      position: absolute;
+      inset: -10% -4%;
+      border-radius: 18px;
+      background:
+        radial-gradient(circle at var(--glass-x, 50%) var(--glass-y, 50%), rgba(255,255,255,.34), rgba(255,255,255,.1) 16%, transparent 34%),
+        linear-gradient(110deg, transparent 0 38%, rgba(255,255,255,.26) 45%, transparent 54% 100%);
+      mix-blend-mode: screen;
+      opacity: .66;
+      filter: blur(.2px);
+      transform: translate3d(0, 0, 0);
+      pointer-events: none;
+      z-index: -1;
+    }
+    .glass-title::before {
+      content: "";
+      position: absolute;
+      inset: -18% -8%;
+      border-radius: 22px;
+      border: 1px solid rgba(255,255,255,.14);
+      backdrop-filter: blur(7px) saturate(1.35);
+      -webkit-backdrop-filter: blur(7px) saturate(1.35);
+      opacity: .38;
+      pointer-events: none;
+      z-index: -2;
+    }
+  `;
+}
+
+function applyGlassTitle(root) {
+  const candidates = [
+    ".result-hero h1",
+    ".report-document h1",
+    ".report-document h2",
+    ".report-document .main-result",
+  ];
+  const title = candidates.map((selector) => root.querySelector(selector)).find(Boolean);
+  if (!title) return;
+  title.classList.add("glass-title");
+  title.addEventListener("pointermove", (event) => {
+    const rect = title.getBoundingClientRect();
+    title.style.setProperty("--glass-x", `${((event.clientX - rect.left) / rect.width) * 100}%`);
+    title.style.setProperty("--glass-y", `${((event.clientY - rect.top) / rect.height) * 100}%`);
+  });
+}
+
 async function showReport(url) {
   const mount = $("reportMount");
   const stage = $("reportStage");
@@ -238,9 +404,10 @@ async function showReport(url) {
   const bodyClass = doc.body.className || "";
 
   root.innerHTML = `
-    <style>${adaptReportCss(styles, bodyClass)}</style>
+    <style>${adaptReportCss(styles, bodyClass)}${reportEnhancementCss()}</style>
     <div class="report-document ${esc(bodyClass)}">${doc.body.innerHTML}</div>
   `;
+  applyGlassTitle(root);
   for (const src of externalScripts) await loadScriptOnce(src);
   for (const code of inlineScripts) {
     new Function("document", "window", "Chart", code)(root, window, window.Chart);
@@ -385,6 +552,150 @@ async function report() {
   log("报告已生成", data.report);
 }
 
+function renderQuiz() {
+  const step = $("quizStep");
+  const count = $("quizCount");
+  const bar = $("quizBar");
+  const question = $("quizQuestion");
+  const options = $("quizOptions");
+  const prev = $("quizPrevBtn");
+  const next = $("quizNextBtn");
+  if (!step || !count || !bar || !question || !options || !prev || !next) return;
+
+  if (state.quizDone) {
+    const scores = [0, 0, 0, 0];
+    state.quizAnswers.forEach((answer) => {
+      if (Number.isInteger(answer)) scores[answer] += 1;
+    });
+    const top = scores.reduce((best, value, index) => (value > scores[best] ? index : best), 0);
+    const profile = QUIZ_TYPES[top];
+    step.textContent = "完成";
+    count.textContent = `${QUIZ_QUESTIONS.length} / ${QUIZ_QUESTIONS.length}`;
+    bar.style.width = "100%";
+    question.textContent = profile.name;
+    question.classList.add("glass-title");
+    options.classList.add("result-mode");
+    options.innerHTML = `
+      <article class="quiz-result">
+        <p>${esc(profile.text)}</p>
+        <dl>
+          ${QUIZ_TYPES.map((type, index) => `
+            <div>
+              <dt>${esc(type.name)}</dt>
+              <dd>${scores[index]} 题</dd>
+            </div>
+          `).join("")}
+        </dl>
+      </article>
+    `;
+    prev.hidden = true;
+    next.disabled = false;
+    next.textContent = "重新测试";
+    return;
+  }
+
+  const item = QUIZ_QUESTIONS[state.quizIndex];
+  const selected = state.quizAnswers[state.quizIndex];
+  question.classList.remove("glass-title");
+  step.textContent = `第 ${ROMAN[state.quizIndex].replace(".", "")} 题`;
+  count.textContent = `${state.quizIndex + 1} / ${QUIZ_QUESTIONS.length}`;
+  bar.style.width = `${((state.quizIndex + 1) / QUIZ_QUESTIONS.length) * 100}%`;
+  question.textContent = item.question;
+  options.classList.remove("result-mode");
+  options.innerHTML = item.options.map((option, index) => `
+    <button class="secondary quiz-option ${selected === index ? "selected" : ""}" data-index="${index}" type="button">
+      <span>${ROMAN[index]}</span>
+      ${esc(option)}
+    </button>
+  `).join("");
+  prev.hidden = false;
+  prev.disabled = state.quizIndex === 0;
+  prev.textContent = "上一题";
+  next.disabled = selected === undefined;
+  next.textContent = state.quizIndex === QUIZ_QUESTIONS.length - 1 ? "查看结果" : "下一题";
+}
+
+function selectQuizOption(index) {
+  state.quizAnswers[state.quizIndex] = index;
+  renderQuiz();
+}
+
+function nextQuiz() {
+  if (state.quizDone) {
+    state.quizIndex = 0;
+    state.quizAnswers = [];
+    state.quizDone = false;
+    renderQuiz();
+    return;
+  }
+  if (state.quizAnswers[state.quizIndex] === undefined) return;
+  if (state.quizIndex >= QUIZ_QUESTIONS.length - 1) {
+    state.quizDone = true;
+  } else {
+    state.quizIndex += 1;
+  }
+  renderQuiz();
+}
+
+function prevQuiz() {
+  if (state.quizIndex <= 0) return;
+  state.quizIndex -= 1;
+  renderQuiz();
+}
+
+function initReveals() {
+  const nodes = document.querySelectorAll(".workflow-card, .report-panel, .archive-card, .archive-empty, .personality-panel, .config-panel, .theme-panel, .console-wrap");
+  if (!("IntersectionObserver" in window)) {
+    nodes.forEach((node) => node.classList.add("is-visible"));
+    return;
+  }
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach((entry) => {
+      if (!entry.isIntersecting) return;
+      entry.target.classList.add("is-visible");
+      observer.unobserve(entry.target);
+    });
+  }, { rootMargin: "0px 0px -8% 0px", threshold: 0.12 });
+  nodes.forEach((node) => {
+    node.classList.add("reveal-item");
+    observer.observe(node);
+  });
+}
+
+function initHeroSlides() {
+  const slides = [...document.querySelectorAll(".hero-slide")];
+  if (slides.length < 2) return;
+  window.setInterval(() => {
+    if (document.body.dataset.pane !== "main") return;
+    state.heroSlideIndex = (state.heroSlideIndex + 1) % slides.length;
+    slides.forEach((slide, index) => slide.classList.toggle("active", index === state.heroSlideIndex));
+  }, 5200);
+}
+
+function initCursorParticles() {
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+  if (window.matchMedia("(pointer: coarse)").matches) return;
+  const layer = document.createElement("div");
+  layer.className = "cursor-particles";
+  document.body.appendChild(layer);
+  let last = 0;
+  window.addEventListener("pointermove", (event) => {
+    const now = performance.now();
+    if (now - last < 26) return;
+    last = now;
+    const dot = document.createElement("i");
+    const angle = Math.random() * Math.PI * 2;
+    const distance = 18 + Math.random() * 26;
+    dot.style.left = `${event.clientX}px`;
+    dot.style.top = `${event.clientY}px`;
+    dot.style.setProperty("--dx", `${Math.cos(angle) * distance}px`);
+    dot.style.setProperty("--dy", `${Math.sin(angle) * distance}px`);
+    dot.style.setProperty("--size", `${3 + Math.random() * 5}px`);
+    layer.appendChild(dot);
+    window.setTimeout(() => dot.remove(), 900);
+  }, { passive: true });
+}
+
 function bind() {
   const on = (id, event, handler) => {
     const el = $(id);
@@ -393,6 +704,12 @@ function bind() {
 
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.addEventListener("click", () => switchPane(button.dataset.step));
+  });
+  on("heroStartBtn", "click", () => scrollToPane("pane-main"));
+  on("heroScrollCue", "click", () => scrollToPane("pane-main"));
+  on("firstConfigBtn", "click", () => {
+    switchPane("settings");
+    scrollToPane("pane-settings");
   });
   on("discoverBtn", "click", () => discoverWechat().catch(handleError));
   on("saveConfigBtn", "click", () => saveConfig().catch(handleError));
@@ -407,6 +724,13 @@ function bind() {
   on("extractBtn", "click", () => extractAndStats().catch(handleError));
   on("analyzeBtn", "click", () => analyze().catch(handleError));
   on("reportBtn", "click", () => report().catch(handleError));
+  on("quizOptions", "click", (event) => {
+    const button = event.target.closest(".quiz-option");
+    if (!button) return;
+    selectQuizOption(Number(button.dataset.index));
+  });
+  on("quizPrevBtn", "click", prevQuiz);
+  on("quizNextBtn", "click", nextQuiz);
   on("consoleHead", "click", (event) => {
     if (event.target.closest("#clearLog")) return;
     $("consoleWrap").classList.toggle("expanded");
@@ -427,6 +751,10 @@ function bind() {
   document.querySelectorAll(".theme-choice").forEach((button) => {
     button.addEventListener("click", () => applyUiTheme(button.dataset.theme));
   });
+  renderQuiz();
+  initReveals();
+  initHeroSlides();
+  initCursorParticles();
 }
 
 function handleError(error) {

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TA回我了 - 微信恋爱分析</title>
-  <link rel="stylesheet" href="styles.css?v=20260424-9">
+  <link rel="stylesheet" href="styles.css?v=20260424-11">
 </head>
 <body>
   <header class="top-nav">
@@ -23,7 +23,20 @@
   <main class="app-shell">
     <section class="stage">
       <section class="hero-panel">
-        <h2 id="panelTitle">分析主线</h2>
+        <div class="hero-visual" aria-hidden="true">
+          <span class="hero-slide active"></span>
+          <span class="hero-slide"></span>
+          <span class="figure-shadow figure-left"></span>
+          <span class="figure-shadow figure-right"></span>
+        </div>
+        <div class="hero-content">
+          <h2 id="panelTitle">分析主线</h2>
+          <div class="hero-actions">
+            <button class="primary hero-cta" id="heroStartBtn">开始分析</button>
+            <button class="secondary hero-cta" id="firstConfigBtn">初次配置</button>
+          </div>
+        </div>
+        <button class="scroll-cue" id="heroScrollCue" type="button" aria-label="下滑查看功能">向下</button>
       </section>
 
       <section class="panes">
@@ -84,16 +97,15 @@
         <article class="pane" id="pane-personality">
           <section class="personality-panel">
             <div class="quiz-progress">
-              <span>第 III 题</span>
-              <strong>3 / 10</strong>
-              <div><i></i></div>
+              <span id="quizStep">第 I 题</span>
+              <strong id="quizCount">1 / 10</strong>
+              <div><i id="quizBar"></i></div>
             </div>
-            <h4>对方三个小时后回“刚忙完”，你的第一反应是？</h4>
-            <div class="quiz-grid">
-              <button class="quiz-option"><span>I.</span>松一口气。TA只是忙，逻辑合理。</button>
-              <button class="quiz-option"><span>II.</span>怀疑。谁会刚好忙到这个点？</button>
-              <button class="quiz-option"><span>III.</span>无所谓。我还没看手机。</button>
-              <button class="quiz-option"><span>IV.</span>慌。先在备忘录写三版回复。</button>
+            <h4 id="quizQuestion">题目加载中</h4>
+            <div class="quiz-grid" id="quizOptions"></div>
+            <div class="quiz-actions">
+              <button class="secondary" id="quizPrevBtn">上一题</button>
+              <button class="primary" id="quizNextBtn">下一题</button>
             </div>
           </section>
         </article>
@@ -159,6 +171,6 @@
     <a href="https://github.com/Exekiel179/she-love-me-web" target="_blank" rel="noreferrer">github.com/Exekiel179/she-love-me-web</a>
   </footer>
 
-  <script src="app.js?v=20260424-9"></script>
+  <script src="app.js?v=20260424-11"></script>
 </body>
 </html>

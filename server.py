@@ -45,6 +45,9 @@ LLM_HTTP_HEADERS = {
     "Accept": "application/json",
     "User-Agent": "TA-Huiwole/1.0 (Windows; local web app)",
 }
+DEFAULT_MAX_CHAT_CHARS = int(os.environ.get("SHE_LOVE_ME_MAX_CHAT_CHARS", "60000"))
+RETRY_MAX_CHAT_CHARS = int(os.environ.get("SHE_LOVE_ME_RETRY_CHAT_CHARS", "24000"))
+LLM_MAX_OUTPUT_TOKENS = int(os.environ.get("SHE_LOVE_ME_LLM_MAX_OUTPUT_TOKENS", "1800"))
 
 
 class AppError(Exception):
@@ -608,6 +611,38 @@ schema 示例：
 """
 
 
+def truncate_chat_history(chat: str, max_chars: int) -> str:
+    chat = chat or ""
+    if len(chat) <= max_chars:
+        return chat
+    head = max_chars // 3
+    tail = max_chars - head
+    return chat[:head] + "\n\n...[中间聊天记录已截断，保留开头与最近互动]...\n\n" + chat[-tail:]
+
+
+def is_retryable_timeout(error: AppError) -> bool:
+    detail = error.details
+    if isinstance(detail, (dict, list)):
+        detail_text = json.dumps(detail, ensure_ascii=False)
+    else:
+        detail_text = str(detail or "")
+    text = f"{error} {detail_text}".lower()
+    return "504" in text or "gateway time-out" in text or "gateway timeout" in text or "retryable" in text
+
+
+def call_llm_analysis(stats: dict[str, Any], contact: str, chat: str) -> dict[str, Any]:
+    primary = truncate_chat_history(chat, DEFAULT_MAX_CHAT_CHARS)
+    try:
+        return call_llm(build_llm_prompt(stats, contact, primary))
+    except AppError as exc:
+        fallback = truncate_chat_history(chat, RETRY_MAX_CHAT_CHARS)
+        if not is_retryable_timeout(exc) or fallback == primary:
+            raise
+        analysis = call_llm(build_llm_prompt(stats, contact, fallback))
+        analysis["_retry_note"] = f"模型首次请求超时，已用 {RETRY_MAX_CHAT_CHARS} 字符精简片段重试。"
+        return analysis
+
+
 def parse_llm_json(content: str) -> dict[str, Any]:
     parsed = parse_jsonish(content)
     if not isinstance(parsed, dict):
@@ -638,6 +673,7 @@ def call_openai(prompt: str) -> dict[str, Any]:
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.4,
+        "max_tokens": LLM_MAX_OUTPUT_TOKENS,
     }
     req = urllib.request.Request(
         f"{base_url}/chat/completions",
@@ -670,7 +706,7 @@ def call_anthropic(prompt: str) -> dict[str, Any]:
 
     payload = {
         "model": model,
-        "max_tokens": 4096,
+        "max_tokens": LLM_MAX_OUTPUT_TOKENS,
         "temperature": 0.4,
         "messages": [{"role": "user", "content": prompt}],
     }
@@ -714,7 +750,7 @@ def call_gemini(prompt: str) -> dict[str, Any]:
 
     payload = {
         "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.4},
+        "generationConfig": {"temperature": 0.4, "maxOutputTokens": LLM_MAX_OUTPUT_TOKENS},
     }
     url = f"{base_url}/models/{model}:generateContent?key={api_key}"
     req = urllib.request.Request(
@@ -744,11 +780,7 @@ def make_analysis(use_llm: bool) -> dict[str, Any]:
     if use_llm:
         chat_path = DATA_ROOT / "chat_history.txt"
         chat = chat_path.read_text(encoding="utf-8", errors="replace") if chat_path.exists() else ""
-        max_chars = int(os.environ.get("SHE_LOVE_ME_MAX_CHAT_CHARS", "200000"))
-        if len(chat) > max_chars:
-            half = max_chars // 2
-            chat = chat[:half] + "\n\n...[中间聊天记录已截断]...\n\n" + chat[-half:]
-        analysis = call_llm(build_llm_prompt(stats, contact, chat))
+        analysis = call_llm_analysis(stats, contact, chat)
         analysis["_analysis_mode"] = "llm"
     else:
         analysis = summarize_stats(stats, contact)

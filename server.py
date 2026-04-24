@@ -41,6 +41,10 @@ PROVIDER_DEFAULTS = {
     "anthropic": {"base_url": "https://api.anthropic.com/v1", "model": "claude-3-5-sonnet-latest"},
     "gemini": {"base_url": "https://generativelanguage.googleapis.com/v1beta", "model": "gemini-1.5-pro"},
 }
+LLM_HTTP_HEADERS = {
+    "Accept": "application/json",
+    "User-Agent": "TA-Huiwole/1.0 (Windows; local web app)",
+}
 
 
 class AppError(Exception):
@@ -361,6 +365,7 @@ def test_llm_connection(payload: dict[str, Any]) -> dict[str, Any]:
                 "messages": [{"role": "user", "content": prompt}],
             }).encode("utf-8"),
             headers={
+                **LLM_HTTP_HEADERS,
                 "x-api-key": api_key,
                 "anthropic-version": "2023-06-01",
                 "Content-Type": "application/json",
@@ -374,7 +379,7 @@ def test_llm_connection(payload: dict[str, Any]) -> dict[str, Any]:
                 "contents": [{"role": "user", "parts": [{"text": prompt}]}],
                 "generationConfig": {"temperature": 0, "maxOutputTokens": 8},
             }).encode("utf-8"),
-            headers={"Content-Type": "application/json"},
+            headers={**LLM_HTTP_HEADERS, "Content-Type": "application/json"},
             method="POST",
         )
     else:
@@ -387,6 +392,7 @@ def test_llm_connection(payload: dict[str, Any]) -> dict[str, Any]:
                 "max_tokens": 8,
             }).encode("utf-8"),
             headers={
+                **LLM_HTTP_HEADERS,
                 "Authorization": f"Bearer {api_key}",
                 "Content-Type": "application/json",
             },
@@ -637,6 +643,7 @@ def call_openai(prompt: str) -> dict[str, Any]:
         f"{base_url}/chat/completions",
         data=json.dumps(payload).encode("utf-8"),
         headers={
+            **LLM_HTTP_HEADERS,
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
         },
@@ -671,6 +678,7 @@ def call_anthropic(prompt: str) -> dict[str, Any]:
         f"{base_url}/messages",
         data=json.dumps(payload).encode("utf-8"),
         headers={
+            **LLM_HTTP_HEADERS,
             "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
             "Content-Type": "application/json",
@@ -712,7 +720,7 @@ def call_gemini(prompt: str) -> dict[str, Any]:
     req = urllib.request.Request(
         url,
         data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"},
+        headers={**LLM_HTTP_HEADERS, "Content-Type": "application/json"},
         method="POST",
     )
     try:

@@ -11,6 +11,8 @@ const state = {
   quizAnswers: [],
   quizDone: false,
   heroSlideIndex: 0,
+  heroScrollLocked: false,
+  touchStartY: 0,
 };
 
 const $ = (id) => document.getElementById(id);
@@ -184,6 +186,19 @@ function scrollToPane(id) {
   requestAnimationFrame(() => {
     document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
   });
+}
+
+function jumpFromHero() {
+  if (document.body.dataset.pane !== "main") return;
+  if (state.heroScrollLocked) return;
+  if (window.scrollY > 90) return;
+  state.heroScrollLocked = true;
+  document.body.classList.add("hero-leaving");
+  scrollToPane("pane-main");
+  window.setTimeout(() => {
+    state.heroScrollLocked = false;
+    document.body.classList.remove("hero-leaving");
+  }, 950);
 }
 
 function renderStatus(status, options = {}) {
@@ -710,6 +725,29 @@ function initCursorParticles() {
   }, { passive: true });
 }
 
+function initHeroScrollTrigger() {
+  window.addEventListener("wheel", (event) => {
+    if (event.deltaY <= 8) return;
+    if (document.body.dataset.pane !== "main") return;
+    if (window.scrollY > 90) return;
+    event.preventDefault();
+    jumpFromHero();
+  }, { passive: false });
+
+  window.addEventListener("touchstart", (event) => {
+    state.touchStartY = event.touches[0]?.clientY || 0;
+  }, { passive: true });
+
+  window.addEventListener("touchmove", (event) => {
+    if (document.body.dataset.pane !== "main") return;
+    if (window.scrollY > 90) return;
+    const currentY = event.touches[0]?.clientY || 0;
+    if (state.touchStartY - currentY <= 14) return;
+    event.preventDefault();
+    jumpFromHero();
+  }, { passive: false });
+}
+
 function bind() {
   const on = (id, event, handler) => {
     const el = $(id);
@@ -764,6 +802,7 @@ function bind() {
   initReveals();
   initHeroSlides();
   initCursorParticles();
+  initHeroScrollTrigger();
 }
 
 function handleError(error) {

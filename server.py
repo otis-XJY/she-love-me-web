@@ -566,6 +566,12 @@ def call_anthropic(prompt: str) -> dict[str, Any]:
             body = json.loads(resp.read().decode("utf-8"))
     except urllib.error.HTTPError as exc:
         detail = exc.read().decode("utf-8", errors="replace")
+        if exc.code == 403 and "1010" in detail:
+            raise AppError(
+                "Anthropic 请求被服务端防火墙拦截：403 / 1010。请改用可访问的 BaseURL，或如果你的中转是 OpenAI 兼容接口，请把接口模式切到 OpenAI。",
+                502,
+                detail,
+            )
         raise AppError(f"Anthropic 服务返回错误: {exc.code}", 502, detail)
     except Exception as exc:
         raise AppError(f"Anthropic 调用失败: {exc}", 502)

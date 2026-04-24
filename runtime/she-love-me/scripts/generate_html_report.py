@@ -861,30 +861,31 @@ def render_html(stats, analysis, contact_name):
   body,
   .report-document {{
     margin: 0;
-    --ta-bg: #f5f3ee;
-    --ta-bg-2: #e9e3d8;
-    --ta-panel: rgba(255, 252, 247, .94);
-    --ta-panel-strong: #fffdf8;
-    --ta-ink: #211f1c;
-    --ta-soft: #5c5750;
-    --ta-muted: #8a8075;
-    --ta-line: rgba(47, 42, 35, .18);
-    --ta-accent: #6f6251;
-    --ta-accent-strong: #2c2924;
-    --ta-good: #1f8d5a;
-    --ta-danger: #b64242;
-    --ta-shadow: 0 18px 50px rgba(48, 41, 31, .12);
+    --ta-bg: #11100d;
+    --ta-bg-2: #2a2418;
+    --ta-panel: rgba(31, 28, 22, .9);
+    --ta-panel-strong: #19160f;
+    --ta-ink: #f6eddb;
+    --ta-soft: #d7c3a2;
+    --ta-muted: #a99776;
+    --ta-line: rgba(215, 177, 101, .24);
+    --ta-accent: #c89c48;
+    --ta-accent-strong: #f0c56d;
+    --ta-good: #64c28f;
+    --ta-danger: #df6b62;
+    --ta-shadow: 0 24px 70px rgba(0, 0, 0, .36);
     color: var(--ta-ink);
     background: linear-gradient(135deg, var(--ta-bg), var(--ta-bg-2));
     font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    color-scheme: dark;
   }}
   .report-document {{
     background: transparent !important;
   }}
   body.report-tone-positive,
   .report-document.report-tone-positive {{
-    --ta-bg: #fff1f2; --ta-bg-2: #f3c9ce; --ta-panel: rgba(255, 248, 246, .94); --ta-panel-strong: #fffaf7;
-    --ta-ink: #35151b; --ta-soft: #6f4048; --ta-muted: #9c6670; --ta-line: rgba(125, 54, 66, .2); --ta-accent: #b94f64; --ta-accent-strong: #7b2435; --ta-good: #247b5b; --ta-danger: #9f2d3f;
+    --ta-bg: #11100d; --ta-bg-2: #2a2418; --ta-panel: rgba(31, 28, 22, .9); --ta-panel-strong: #19160f;
+    --ta-ink: #f6eddb; --ta-soft: #d7c3a2; --ta-muted: #a99776; --ta-line: rgba(215, 177, 101, .24); --ta-accent: #c89c48; --ta-accent-strong: #f0c56d; --ta-good: #64c28f; --ta-danger: #df6b62;
   }}
   body.report-tone-negative,
   .report-document.report-tone-negative {{

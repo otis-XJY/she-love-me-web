@@ -283,7 +283,7 @@ function applyProviderDefaults(provider) {
 }
 
 function applyUiTheme(theme) {
-  const selected = ["rose", "gold", "minimal"].includes(theme) ? theme : "minimal";
+  const selected = ["rose", "gold", "minimal"].includes(theme) ? theme : "gold";
   document.body.classList.remove("ui-rose", "ui-gold", "ui-minimal");
   document.body.classList.add(`ui-${selected}`);
   localStorage.setItem("ta-ui-theme", selected);
@@ -401,7 +401,13 @@ function handleError(error) {
   log(`失败：${error.message}`, detail);
 }
 
-applyUiTheme(localStorage.getItem("ta-ui-theme") || "minimal");
+const savedTheme = localStorage.getItem("ta-ui-theme");
+const migratedTheme = localStorage.getItem("ta-ui-theme-v2");
+const initialTheme = !migratedTheme && (!savedTheme || savedTheme === "minimal")
+  ? "gold"
+  : (savedTheme || "gold");
+localStorage.setItem("ta-ui-theme-v2", "dark-gold-default");
+applyUiTheme(initialTheme);
 bind();
 switchPane("main");
 refreshStatus().catch(handleError);

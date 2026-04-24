@@ -86,9 +86,31 @@ body {
 }
 
 @media (pointer: fine) {
-  body,
-  body * {
-    cursor: none !important;
+  body {
+    cursor: url("assets/cursors/laser-arrow.ani") 2 2, auto;
+  }
+
+  button,
+  a,
+  .link-button,
+  .contact,
+  .archive-open,
+  .archive-delete,
+  .theme-choice,
+  .nav-item {
+    cursor: url("assets/cursors/laser-link.ani") 4 2, pointer;
+  }
+
+  input,
+  textarea,
+  select,
+  .search-field {
+    cursor: url("assets/cursors/laser-text.ani") 8 12, text;
+  }
+
+  body.busy,
+  body.busy * {
+    cursor: url("assets/cursors/laser-busy.ani") 8 8, wait !important;
   }
 }
 
@@ -1240,10 +1262,45 @@ select:focus {
   grid-column: span 3;
 }
 
+.endpoint-preview {
+  display: grid;
+  gap: 8px;
+  margin-top: 16px;
+  padding: 14px;
+  border: 1px solid color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: color-mix(in srgb, var(--panel-strong) 78%, transparent);
+}
+
+.endpoint-preview span {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 900;
+  letter-spacing: .08em;
+}
+
+.endpoint-preview code {
+  color: var(--ink);
+}
+
 .config-hint {
   margin-top: 12px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.config-test {
+  margin-top: 12px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.config-test.ok {
+  color: var(--good);
+}
+
+.config-test.bad {
+  color: var(--danger);
 }
 
 .theme-grid {
@@ -1351,106 +1408,6 @@ select:focus {
   mix-blend-mode: screen;
 }
 
-.clown-cursor {
-  --r: 0deg;
-  position: fixed;
-  left: 0;
-  top: 0;
-  z-index: 9997;
-  width: 34px;
-  height: 38px;
-  pointer-events: none;
-  border: 1px solid rgba(245, 197, 92, .86);
-  border-radius: 50% 50% 46% 46% / 42% 42% 58% 58%;
-  background:
-    radial-gradient(circle at 50% 56%, #d5a338 0 8%, transparent 9%),
-    radial-gradient(circle at 36% 38%, #f7d77e 0 8%, transparent 9%),
-    radial-gradient(circle at 64% 38%, #f7d77e 0 8%, transparent 9%),
-    linear-gradient(145deg, rgba(250, 214, 130, .28), rgba(10, 9, 13, .98) 32% 74%, rgba(89, 57, 16, .82)),
-    radial-gradient(circle at 50% 18%, rgba(255, 237, 179, .34), transparent 34%);
-  box-shadow:
-    0 0 16px rgba(245, 197, 92, .48),
-    0 0 34px rgba(126, 83, 25, .34),
-    inset 0 0 12px rgba(255, 218, 122, .2),
-    inset 0 -8px 18px rgba(0, 0, 0, .44);
-  transform: translate(-50%, -50%) rotate(var(--r));
-  transition:
-    width .12s var(--ease-out-quart),
-    height .12s var(--ease-out-quart),
-    box-shadow .12s var(--ease-out-quart);
-}
-
-.clown-cursor::before,
-.clown-cursor::after {
-  content: "";
-  position: absolute;
-  top: 6px;
-  width: 8px;
-  height: 12px;
-  border-radius: 999px 999px 2px 2px;
-  background: linear-gradient(180deg, #f7d77e, #8b5a18 68%, #100d0a);
-  opacity: .94;
-  transform-origin: bottom center;
-}
-
-.clown-cursor::before {
-  left: 8px;
-  transform: rotate(-18deg);
-}
-
-.clown-cursor::after {
-  right: 8px;
-  transform: rotate(18deg);
-}
-
-.clown-cursor i {
-  position: absolute;
-  top: 13px;
-  width: 5px;
-  height: 7px;
-  border-radius: 999px;
-  background: #f8d982;
-  box-shadow:
-    0 0 8px rgba(247, 215, 126, .55),
-    inset 0 0 2px rgba(0, 0, 0, .85);
-}
-
-.clown-cursor i:nth-child(1) { left: 10px; }
-.clown-cursor i:nth-child(2) { right: 10px; }
-
-.clown-cursor b {
-  position: absolute;
-  left: 50%;
-  top: 20px;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: #d6a23a;
-  box-shadow: 0 0 12px rgba(245, 197, 92, .82);
-  transform: translateX(-50%);
-}
-
-.clown-cursor em {
-  position: absolute;
-  left: 50%;
-  bottom: 8px;
-  width: 15px;
-  height: 6px;
-  border-bottom: 2px solid #f1c566;
-  border-radius: 0 0 999px 999px;
-  transform: translateX(-50%);
-}
-
-.clown-cursor.pressed {
-  width: 30px;
-  height: 34px;
-  box-shadow:
-    0 0 22px rgba(245, 197, 92, .68),
-    0 0 44px rgba(255, 176, 58, .28),
-    inset 0 0 14px rgba(255, 218, 122, .28),
-    inset 0 -8px 18px rgba(0, 0, 0, .5);
-}
-
 @media (max-width: 1100px) {
   .top-nav {
     grid-template-columns: 1fr auto;
@@ -1519,9 +1476,6 @@ select:focus {
     transform: none;
   }
   .cursor-particles {
-    display: none;
-  }
-  .clown-cursor {
     display: none;
   }
 }

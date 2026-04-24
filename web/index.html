@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TA回我了 - 微信恋爱分析</title>
-  <link rel="stylesheet" href="styles.css?v=20260425-3">
+  <link rel="stylesheet" href="styles.css?v=20260425-4">
 </head>
 <body>
   <header class="top-nav">
@@ -143,7 +143,13 @@
                 <input id="llmApiKey" type="password" autocomplete="off" placeholder="粘贴后自动隐藏">
               </label>
               <button class="primary" id="saveConfigBtn">保存配置</button>
+              <button class="secondary" id="testConfigBtn" type="button">测试连通性</button>
             </div>
+            <div class="endpoint-preview">
+              <span>最终请求地址</span>
+              <code id="llmEndpoint">-</code>
+            </div>
+            <p class="config-test" id="configTestResult">尚未测试连通性。</p>
             <p class="config-hint" id="configHint">尚未读取模型配置。</p>
           </section>
           <section class="theme-panel">
@@ -173,6 +179,6 @@
     <a href="https://github.com/Exekiel179/she-love-me-web" target="_blank" rel="noreferrer">github.com/Exekiel179/she-love-me-web</a>
   </footer>
 
-  <script src="app.js?v=20260425-3"></script>
+  <script src="app.js?v=20260425-4"></script>
 </body>
 </html>

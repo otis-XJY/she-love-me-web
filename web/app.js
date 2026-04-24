@@ -243,6 +243,7 @@ function renderStatus(status, options = {}) {
   if ($("configHint")) {
     $("configHint").textContent = `当前：${status.llm_provider || "openai"} · ${status.llm_base_url || "未设置 BaseURL"} · ${status.llm_model || "未设置模型"} · ${status.llm_key_hint || "未设置"}`;
   }
+  updateEndpointPreview();
 
   const strip = $("runtimeStatus");
   strip.querySelector("i").className = status.environment_ready ? "ok" : "bad";
@@ -520,10 +521,53 @@ async function saveConfig() {
   log("模型配置已保存", data.config);
 }
 
+function buildEndpoint(provider, baseUrl, model) {
+  const base = (baseUrl || PROVIDER_DEFAULTS[provider]?.baseUrl || PROVIDER_DEFAULTS.openai.baseUrl).trim().replace(/\/+$/, "");
+  const selectedModel = (model || PROVIDER_DEFAULTS[provider]?.model || PROVIDER_DEFAULTS.openai.model).trim();
+  if (provider === "anthropic") return `${base}/messages`;
+  if (provider === "gemini") return `${base}/models/${encodeURIComponent(selectedModel)}:generateContent?key=***`;
+  return `${base}/chat/completions`;
+}
+
+function readConfigForm() {
+  const inputValue = $("llmApiKey")?.value.trim() || "";
+  return {
+    provider: $("llmProvider")?.value || "openai",
+    base_url: $("llmBaseUrl")?.value.trim() || "",
+    model: $("llmModel")?.value.trim() || "",
+    api_key: state.pendingApiKey || (inputValue === MASKED_KEY ? "" : inputValue),
+  };
+}
+
+function updateEndpointPreview() {
+  const body = readConfigForm();
+  const provider = body.provider || "openai";
+  const endpoint = buildEndpoint(provider, body.base_url, body.model);
+  if ($("llmEndpoint")) $("llmEndpoint").textContent = endpoint;
+}
+
+async function testConfig() {
+  const body = readConfigForm();
+  updateEndpointPreview();
+  if ($("configTestResult")) {
+    $("configTestResult").className = "config-test";
+    $("configTestResult").textContent = "正在测试连通性...";
+  }
+  log("测试模型接口连通性");
+  const data = await api("/api/config/test", { method: "POST", body });
+  const result = data.result;
+  if ($("configTestResult")) {
+    $("configTestResult").className = "config-test ok";
+    $("configTestResult").textContent = `连通成功 · HTTP ${result.status} · ${result.latency_ms}ms`;
+  }
+  log("模型接口连通成功", { endpoint: result.endpoint, latency_ms: result.latency_ms });
+}
+
 function applyProviderDefaults(provider) {
   const defaults = PROVIDER_DEFAULTS[provider] || PROVIDER_DEFAULTS.openai;
   $("llmBaseUrl").value = defaults.baseUrl;
   $("llmModel").value = defaults.model;
+  updateEndpointPreview();
 }
 
 const UI_THEMES = ["neon", "cyan", "ember"];
@@ -549,6 +593,7 @@ function maskApiKeyFromPaste(event) {
   state.pendingApiKey = pasted;
   $("llmApiKey").value = MASKED_KEY;
   $("llmApiKey").blur();
+  updateEndpointPreview();
   log("API Key 已粘贴并隐藏。");
 }
 
@@ -761,12 +806,7 @@ function initCursorParticles() {
   const canvas = document.createElement("canvas");
   canvas.className = "cursor-particles";
   canvas.setAttribute("aria-hidden", "true");
-  const mask = document.createElement("div");
-  mask.className = "clown-cursor";
-  mask.setAttribute("aria-hidden", "true");
-  mask.innerHTML = "<i></i><i></i><b></b><em></em>";
   document.body.appendChild(canvas);
-  document.body.appendChild(mask);
   const context = canvas.getContext("2d");
   if (!context) return;
   const particles = [];
@@ -779,8 +819,6 @@ function initCursorParticles() {
     { hue: 199, sat: 86, light: 58 },
   ];
   let frame = 0;
-  let maskX = window.innerWidth / 2;
-  let maskY = window.innerHeight / 2;
 
   function resize() {
     const ratio = window.devicePixelRatio || 1;
@@ -796,10 +834,6 @@ function initCursorParticles() {
     pointer.y = event.clientY;
     pointer.mx = event.movementX || 0;
     pointer.my = event.movementY || 0;
-    const rotate = Math.max(-16, Math.min(16, pointer.mx * .42));
-    mask.style.setProperty("--x", `${pointer.x}px`);
-    mask.style.setProperty("--y", `${pointer.y}px`);
-    mask.style.setProperty("--r", `${rotate}deg`);
     const velocity = Math.max(1, Math.hypot(pointer.mx, pointer.my));
     ribbons.push({
       x: pointer.x,
@@ -832,9 +866,6 @@ function initCursorParticles() {
     frame = window.requestAnimationFrame(draw);
     context.clearRect(0, 0, window.innerWidth, window.innerHeight);
     context.globalCompositeOperation = "lighter";
-    maskX += (pointer.x - maskX) * .38;
-    maskY += (pointer.y - maskY) * .38;
-    mask.style.transform = `translate(${maskX}px, ${maskY}px) translate(-50%, -50%) rotate(var(--r, 0deg))`;
     if (ribbons.length > 1) {
       for (let index = 1; index < ribbons.length; index += 1) {
         const prev = ribbons[index - 1];
@@ -882,8 +913,6 @@ function initCursorParticles() {
   resize();
   window.addEventListener("resize", resize);
   window.addEventListener("pointermove", (event) => addParticles(event, 4), { passive: true });
-  window.addEventListener("pointerdown", () => mask.classList.add("pressed"), { passive: true });
-  window.addEventListener("pointerup", () => mask.classList.remove("pressed"), { passive: true });
   window.addEventListener("click", (event) => addParticles(event, 42, 1.55), { passive: true });
   frame = window.requestAnimationFrame(draw);
 }
@@ -952,7 +981,10 @@ function bind() {
   on("heroScrollCue", "click", jumpFromHero);
   on("scrollReportCue", "click", scrollToReportPanel);
   on("saveConfigBtn", "click", () => saveConfig().catch(handleError));
+  on("testConfigBtn", "click", () => testConfig().catch(handleError));
   on("llmProvider", "change", (event) => applyProviderDefaults(event.target.value));
+  on("llmBaseUrl", "input", updateEndpointPreview);
+  on("llmModel", "input", updateEndpointPreview);
   on("llmApiKey", "paste", maskApiKeyFromPaste);
   on("llmApiKey", "input", () => {
     if ($("llmApiKey")?.value !== MASKED_KEY) state.pendingApiKey = "";
@@ -1002,6 +1034,11 @@ function handleError(error) {
   const detail = error.data?.details || error.message;
   document.body.classList.remove("analysis-running");
   setAnalysisProgress(0, "分析失败，请查看后台记录");
+  if ($("configTestResult") && String(error.message || "").includes("连通性测试失败")) {
+    const endpoint = error.data?.details?.endpoint;
+    $("configTestResult").className = "config-test bad";
+    $("configTestResult").textContent = endpoint ? `${error.message} · ${endpoint}` : error.message;
+  }
   log(`失败：${error.message}`, detail);
 }
 

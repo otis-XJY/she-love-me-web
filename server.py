@@ -9,7 +9,9 @@ import subprocess
 import sys
 import traceback
 import urllib.error
+import urllib.parse
 import urllib.request
+import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -304,6 +306,120 @@ def update_llm_config(payload: dict[str, Any]) -> dict[str, str]:
         "model": LLM_CONFIG.get("model", ""),
         "key_hint": build_status()["llm_key_hint"],
     }
+
+
+def normalize_llm_payload(payload: dict[str, Any], persist: bool = False) -> dict[str, str]:
+    old_provider = LLM_CONFIG.get("provider", "openai")
+    provider = str(payload.get("provider", LLM_CONFIG.get("provider", "openai"))).strip().lower()
+    if provider not in PROVIDER_DEFAULTS:
+        raise AppError("接口模式只支持 openai、anthropic、gemini")
+    base_url = str(payload.get("base_url", "")).strip().rstrip("/")
+    model = str(payload.get("model", "")).strip()
+    api_key = str(payload.get("api_key", "")).strip() or LLM_CONFIG.get("api_key", "")
+
+    provider_changed = provider != old_provider
+    if not base_url:
+        base_url = PROVIDER_DEFAULTS[provider]["base_url"] if provider_changed or not LLM_CONFIG.get("base_url") else LLM_CONFIG.get("base_url", "")
+    if not re.match(r"^https?://", base_url):
+        raise AppError("BaseURL 必须以 http:// 或 https:// 开头")
+    if not model:
+        model = PROVIDER_DEFAULTS[provider]["model"] if provider_changed or not LLM_CONFIG.get("model") else LLM_CONFIG.get("model", "")
+    if not api_key:
+        raise AppError("未配置 API Key")
+
+    config = {"provider": provider, "base_url": base_url, "model": model, "api_key": api_key}
+    if persist:
+        LLM_CONFIG.update(config)
+    return config
+
+
+def build_llm_endpoint(provider: str, base_url: str, model: str) -> str:
+    base = base_url.rstrip("/")
+    if provider == "anthropic":
+        return f"{base}/messages"
+    if provider == "gemini":
+        return f"{base}/models/{urllib.parse.quote(model, safe='')}:generateContent?key=***"
+    return f"{base}/chat/completions"
+
+
+def test_llm_connection(payload: dict[str, Any]) -> dict[str, Any]:
+    config = normalize_llm_payload(payload)
+    provider = config["provider"]
+    base_url = config["base_url"]
+    model = config["model"]
+    api_key = config["api_key"]
+    endpoint = build_llm_endpoint(provider, base_url, model)
+    prompt = "Reply with OK only."
+
+    if provider == "anthropic":
+        req = urllib.request.Request(
+            endpoint,
+            data=json.dumps({
+                "model": model,
+                "max_tokens": 8,
+                "temperature": 0,
+                "messages": [{"role": "user", "content": prompt}],
+            }).encode("utf-8"),
+            headers={
+                "x-api-key": api_key,
+                "anthropic-version": "2023-06-01",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+    elif provider == "gemini":
+        req = urllib.request.Request(
+            endpoint.replace("***", urllib.parse.quote(api_key, safe="")),
+            data=json.dumps({
+                "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+                "generationConfig": {"temperature": 0, "maxOutputTokens": 8},
+            }).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+    else:
+        req = urllib.request.Request(
+            endpoint,
+            data=json.dumps({
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "temperature": 0,
+                "max_tokens": 8,
+            }).encode("utf-8"),
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+
+    started = time.time()
+    try:
+        with urllib.request.urlopen(req, timeout=45) as resp:
+            raw = resp.read().decode("utf-8", errors="replace")
+            return {
+                "ok": True,
+                "provider": provider,
+                "model": model,
+                "endpoint": endpoint,
+                "status": resp.status,
+                "latency_ms": int((time.time() - started) * 1000),
+                "preview": raw[:220],
+            }
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise AppError(f"连通性测试失败：HTTP {exc.code}", 502, {
+            "provider": provider,
+            "model": model,
+            "endpoint": endpoint,
+            "detail": detail,
+        })
+    except Exception as exc:
+        raise AppError(f"连通性测试失败：{exc}", 502, {
+            "provider": provider,
+            "model": model,
+            "endpoint": endpoint,
+        })
 
 
 def discover_wechat() -> dict[str, Any]:
@@ -675,6 +791,10 @@ class Handler(BaseHTTPRequestHandler):
             if self.path == "/api/config":
                 config = update_llm_config(body)
                 self.send_json({"ok": True, "config": config, "status": build_status()})
+                return
+            if self.path == "/api/config/test":
+                result = test_llm_connection(body)
+                self.send_json({"ok": True, "result": result})
                 return
             if self.path == "/api/decrypt":
                 result = run_script("decrypt_wechat.py", [], timeout=2400)

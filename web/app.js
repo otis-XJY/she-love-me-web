@@ -770,12 +770,13 @@ function initCursorParticles() {
   const context = canvas.getContext("2d");
   if (!context) return;
   const particles = [];
+  const ribbons = [];
   const pointer = { x: 0, y: 0, mx: 0, my: 0 };
   const palette = [
-    { hue: 313, sat: 92, light: 64 },
-    { hue: 284, sat: 88, light: 68 },
-    { hue: 195, sat: 96, light: 62 },
-    { hue: 36, sat: 100, light: 62 },
+    { hue: 43, sat: 96, light: 66 },
+    { hue: 35, sat: 88, light: 58 },
+    { hue: 282, sat: 72, light: 58 },
+    { hue: 199, sat: 86, light: 58 },
   ];
   let frame = 0;
   let maskX = window.innerWidth / 2;
@@ -800,24 +801,31 @@ function initCursorParticles() {
     mask.style.setProperty("--y", `${pointer.y}px`);
     mask.style.setProperty("--r", `${rotate}deg`);
     const velocity = Math.max(1, Math.hypot(pointer.mx, pointer.my));
+    ribbons.push({
+      x: pointer.x,
+      y: pointer.y,
+      width: 7 + Math.min(velocity * .18, 9) * burst,
+      alpha: .42,
+    });
+    if (ribbons.length > 28) ribbons.shift();
     for (let index = 0; index < count; index += 1) {
       const angle = Math.random() * Math.PI * 2;
-      const speed = (0.8 + Math.random() * 3.2) * burst + Math.min(velocity * .024, 1.8);
-      const color = palette[index % (burst > 1.2 ? palette.length : 3)];
+      const speed = (0.62 + Math.random() * 2.6) * burst + Math.min(velocity * .018, 1.45);
+      const color = palette[index % (burst > 1.2 ? palette.length : 2)];
       particles.push({
         x: pointer.x - pointer.mx * .7,
         y: pointer.y - pointer.my * .7,
-        vx: Math.cos(angle) * speed - pointer.mx * .03,
-        vy: Math.sin(angle) * speed - pointer.my * .03,
-        size: 1.2 + Math.random() * 2.7 * burst,
-        decay: .03 + Math.random() * .022,
+        vx: Math.cos(angle) * speed - pointer.mx * .022,
+        vy: Math.sin(angle) * speed - pointer.my * .022,
+        size: .95 + Math.random() * 2.3 * burst,
+        decay: .032 + Math.random() * .024,
         hue: color.hue + (Math.random() - .5) * 10,
         sat: color.sat,
         light: color.light,
-        alpha: .28 + Math.random() * .22,
+        alpha: .22 + Math.random() * .2,
       });
     }
-    if (particles.length > 360) particles.splice(0, particles.length - 360);
+    if (particles.length > 300) particles.splice(0, particles.length - 300);
   }
 
   function draw() {
@@ -827,9 +835,32 @@ function initCursorParticles() {
     maskX += (pointer.x - maskX) * .38;
     maskY += (pointer.y - maskY) * .38;
     mask.style.transform = `translate(${maskX}px, ${maskY}px) translate(-50%, -50%) rotate(var(--r, 0deg))`;
+    if (ribbons.length > 1) {
+      for (let index = 1; index < ribbons.length; index += 1) {
+        const prev = ribbons[index - 1];
+        const point = ribbons[index];
+        const alpha = Math.min(prev.alpha, point.alpha);
+        const gradient = context.createLinearGradient(prev.x, prev.y, point.x, point.y);
+        gradient.addColorStop(0, `rgba(95, 62, 17, ${alpha * .22})`);
+        gradient.addColorStop(.45, `rgba(247, 194, 94, ${alpha * .42})`);
+        gradient.addColorStop(1, `rgba(255, 237, 175, ${alpha * .16})`);
+        context.strokeStyle = gradient;
+        context.lineWidth = Math.max(1, point.width * alpha);
+        context.lineCap = "round";
+        context.beginPath();
+        context.moveTo(prev.x, prev.y);
+        context.quadraticCurveTo((prev.x + point.x) / 2, (prev.y + point.y) / 2, point.x, point.y);
+        context.stroke();
+      }
+      for (let index = ribbons.length - 1; index >= 0; index -= 1) {
+        ribbons[index].alpha *= .9;
+        ribbons[index].width *= .965;
+        if (ribbons[index].alpha <= .025) ribbons.splice(index, 1);
+      }
+    }
     for (let index = particles.length - 1; index >= 0; index -= 1) {
       const particle = particles[index];
-      const radius = particle.size * 3;
+      const radius = particle.size * 2.7;
       const gradient = context.createRadialGradient(particle.x, particle.y, 0, particle.x, particle.y, radius);
       gradient.addColorStop(0, `hsla(${particle.hue}, ${particle.sat}%, 88%, ${particle.alpha})`);
       gradient.addColorStop(.45, `hsla(${particle.hue}, ${particle.sat}%, ${particle.light}%, ${particle.alpha * .56})`);
@@ -850,10 +881,10 @@ function initCursorParticles() {
 
   resize();
   window.addEventListener("resize", resize);
-  window.addEventListener("pointermove", (event) => addParticles(event, 5), { passive: true });
+  window.addEventListener("pointermove", (event) => addParticles(event, 4), { passive: true });
   window.addEventListener("pointerdown", () => mask.classList.add("pressed"), { passive: true });
   window.addEventListener("pointerup", () => mask.classList.remove("pressed"), { passive: true });
-  window.addEventListener("click", (event) => addParticles(event, 56, 1.65), { passive: true });
+  window.addEventListener("click", (event) => addParticles(event, 42, 1.55), { passive: true });
   frame = window.requestAnimationFrame(draw);
 }
 

@@ -18,10 +18,10 @@ const PROVIDER_DEFAULTS = {
   gemini: { baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-1.5-pro" },
 };
 const PANE_META = {
-  main: ["I. 分析主线", "分析主线", "识别微信聊天记录，选择一个人，生成潜台词分析和最终报告。"],
-  archive: ["II. 角色档案", "角色档案", "查看过往分析记录，并删除不需要的档案。"],
-  personality: ["III. 恋爱人格", "恋爱人格", "关于你自己的关系模式分析，不和角色档案重复。"],
-  settings: ["IV. 设置", "设置", "配置模型接口、检查环境，并选择界面颜色风格。"],
+  main: "TA回我了",
+  archive: "角色档案",
+  personality: "恋爱人格",
+  settings: "设置",
 };
 
 function esc(value) {
@@ -68,14 +68,14 @@ function setBusy(value) {
 function switchPane(name) {
   const aliases = { setup: "settings", decrypt: "main", contact: "main", analysis: "main", report: "main" };
   name = aliases[name] || name;
+  document.body.dataset.pane = name;
   document.querySelectorAll(".nav-item").forEach((el) => el.classList.toggle("active", el.dataset.step === name));
   document.querySelectorAll(".pane").forEach((el) => el.classList.toggle("visible", el.id === `pane-${name}`));
-  const [, title, copy] = PANE_META[name] || PANE_META.main;
-  $("panelTitle").textContent = title;
-  $("panelCopy").textContent = copy;
+  $("panelTitle").textContent = PANE_META[name] || PANE_META.main;
 }
 
-function renderStatus(status) {
+function renderStatus(status, options = {}) {
+  const { loadLatestReport = true } = options;
   state.status = status;
   if ($("runtimePath")) $("runtimePath").textContent = status.runtime_root || "-";
   if ($("llmState")) $("llmState").textContent = status.llm_configured ? `${status.llm_provider || "openai"} · ${status.llm_model || "已配置"}` : "未配置";
@@ -95,7 +95,27 @@ function renderStatus(status) {
   strip.querySelector("i").className = status.environment_ready ? "ok" : "bad";
   strip.querySelector("span").textContent = status.environment_label || (status.environment_ready ? "环境就绪" : "环境异常");
   renderArchives(status.archives || []);
-  if (status.latest_report) setReport(status.latest_report, { silent: true });
+  if (loadLatestReport && status.latest_report) setReport(status.latest_report, { silent: true });
+}
+
+function clearMainAnalysis() {
+  state.latestReportUrl = "";
+  const openReport = $("openReport");
+  if (openReport) {
+    openReport.href = "#";
+    delete openReport.dataset.href;
+    openReport.setAttribute("aria-disabled", "true");
+    openReport.classList.add("disabled");
+  }
+  if ($("reportSlot")) $("reportSlot").textContent = "暂无报告。";
+  const stage = $("reportStage");
+  if (stage) stage.classList.remove("has-report");
+  const mount = $("reportMount");
+  if (mount) {
+    if (mount.shadowRoot) mount.shadowRoot.innerHTML = "";
+    mount.innerHTML = "";
+  }
+  if ($("analysisPreview")) $("analysisPreview").textContent = "尚未生成分析。";
 }
 
 function renderArchives(archives) {
@@ -149,7 +169,8 @@ async function deleteArchive(item) {
     method: "POST",
     body: { id: item.id, report_name: item.report_name },
   });
-  renderStatus(data.status);
+  renderStatus(data.status, { loadLatestReport: false });
+  clearMainAnalysis();
   log("角色档案已删除", data.deleted);
 }
 
@@ -342,17 +363,22 @@ async function extractAndStats() {
   log("统计完成", stats.stats.scores || stats.result.stdout);
 }
 
-async function analyze() {
-  const useLlm = $("useLlm").checked;
-  log(useLlm ? "调用模型生成分析" : "使用本地启发式生成分析");
-  const data = await api("/api/analyze", { method: "POST", body: { use_llm: useLlm } });
+async function runSubtextScan() {
+  log("调用模型生成潜台词扫描");
+  const data = await api("/api/analyze", { method: "POST", body: { use_llm: true } });
   renderStatus(data.status);
   $("analysisPreview").textContent = JSON.stringify(data.analysis, null, 2);
   log("analysis.json 已生成", { mode: data.analysis._analysis_mode });
+  return data;
+}
+
+async function analyze() {
+  await runSubtextScan();
 }
 
 async function report() {
-  log("生成报告");
+  log("先执行潜台词扫描，再生成报告");
+  await runSubtextScan();
   const data = await api("/api/report", { method: "POST" });
   renderStatus(data.status);
   setReport(data.report);

@@ -192,6 +192,46 @@ def create_archive(report_path: Path) -> dict[str, Any]:
     return metadata
 
 
+def delete_archive(archive_id: str, report_name: str = "") -> dict[str, Any]:
+    ensure_dirs()
+    archive_id = str(archive_id or "").strip()
+    report_name = str(report_name or "").strip()
+    if archive_id and not re.fullmatch(r"[\w\u4e00-\u9fff\-]+", archive_id):
+        raise AppError("非法档案 ID", 400)
+    if report_name and not safe_report_name(report_name):
+        raise AppError("非法报告文件名", 400)
+
+    deleted: list[str] = []
+    archive_dir = (ARCHIVES_ROOT / archive_id).resolve() if archive_id else None
+    report_to_delete = report_name
+
+    if archive_dir and str(archive_dir).startswith(str(ARCHIVES_ROOT.resolve())) and archive_dir.exists():
+        meta_path = archive_dir / "metadata.json"
+        if meta_path.exists():
+            try:
+                metadata = read_json(meta_path)
+                report_to_delete = report_to_delete or str(metadata.get("report_name") or "")
+            except Exception:
+                pass
+        shutil.rmtree(archive_dir)
+        deleted.append(f"archive:{archive_id}")
+
+    if not report_to_delete and archive_id:
+        candidate = f"{archive_id}.html"
+        if safe_report_name(candidate):
+            report_to_delete = candidate
+
+    if report_to_delete:
+        report_path = (REPORTS_ROOT / report_to_delete).resolve()
+        if str(report_path).startswith(str(REPORTS_ROOT.resolve())) and report_path.exists():
+            report_path.unlink()
+            deleted.append(f"report:{report_to_delete}")
+
+    if not deleted:
+        raise AppError("没有找到要删除的档案", 404)
+    return {"deleted": deleted, "status": build_status()}
+
+
 def get_contact_name() -> str:
     messages_path = DATA_ROOT / "messages.json"
     if messages_path.exists():
@@ -675,6 +715,10 @@ class Handler(BaseHTTPRequestHandler):
                 report = {"path": str(report_path), "name": report_path.name, "url": f"/reports/{report_path.name}"}
                 archive = create_archive(report_path) if report_path.exists() else None
                 self.send_json({"ok": True, "result": result, "report": report, "archive": archive, "status": build_status()})
+                return
+            if self.path == "/api/archive/delete":
+                result = delete_archive(str(body.get("id", "")), str(body.get("report_name", "")))
+                self.send_json({"ok": True, **result})
                 return
             raise AppError("未知接口", 404)
         except AppError as exc:

@@ -1,194 +1,164 @@
 <!doctype html>
-<html class="dark" lang="zh-CN">
+<html lang="zh-CN">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TA回我了 - 微信恋爱分析</title>
-  <link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="styles.css?v=20260424-2">
+  <link rel="stylesheet" href="styles.css?v=20260424-7">
 </head>
 <body>
   <header class="top-nav">
-    <div class="brand-lockup">
+    <a class="brand-lockup" href="/" aria-label="TA回我了首页">
       <span class="brand-name">TA回我了</span>
-      <span class="brand-subtitle">本地恋爱分析剧场</span>
-    </div>
+      <span class="brand-subtitle">本地恋爱分析</span>
+    </a>
     <nav class="nav-links" aria-label="主导航">
-      <button class="nav-item active" data-step="main">分析主线</button>
-      <button class="nav-item" data-step="archive">角色档案</button>
-      <button class="nav-item" data-step="personality">恋爱人格</button>
-      <button class="nav-item" data-step="settings">设置</button>
+      <button class="nav-item active" data-step="main"><span>I.</span>分析主线</button>
+      <button class="nav-item" data-step="archive"><span>II.</span>角色档案</button>
+      <button class="nav-item" data-step="personality"><span>III.</span>恋爱人格</button>
+      <button class="nav-item" data-step="settings"><span>IV.</span>设置</button>
     </nav>
-    <a class="curtain-link" href="http://127.0.0.1:8765/api/status" target="_blank" rel="noreferrer">运行状态</a>
+    <div class="runtime-pill" id="runtimeStatus"><i></i><span>读取状态中</span></div>
   </header>
 
   <main class="app-shell">
-    <aside class="playbill">
-      <div class="suit top">favorite</div>
-      <div class="playbill-inner">
-        <p class="label-caps">本地运行台</p>
-        <h1>TA回我了</h1>
-        <p class="playbill-copy">本地识别微信聊天记录，生成关系剧本、互动张力和最终报告。</p>
-
-        <div class="status-strip" id="runtimeStatus">
-          <span class="dot"></span>
-          <span>读取状态中</span>
-        </div>
-
-        <nav class="steps" aria-label="产品功能">
-          <button class="step active" data-step="main"><span>I.</span>分析主线</button>
-          <button class="step" data-step="archive"><span>II.</span>角色档案</button>
-          <button class="step" data-step="personality"><span>III.</span>恋爱人格</button>
-          <button class="step" data-step="settings"><span>IV.</span>设置</button>
-        </nav>
-
-        <div class="meta">
+    <aside class="side-panel" aria-label="运行摘要">
+      <section class="side-card">
+        <span class="roman">I.</span>
+        <h1>本地运行</h1>
+        <p>自动识别微信聊天记录，选择对象，生成分析和报告。</p>
+      </section>
+      <section class="side-meta">
+        <dl>
           <div>
-            <span>项目路径</span>
-            <code id="runtimePath">-</code>
+            <dt>环境</dt>
+            <dd id="environmentBadge">检测中</dd>
           </div>
           <div>
-            <span>模型状态</span>
-            <code id="llmState">未配置</code>
+            <dt>模型</dt>
+            <dd id="llmState">未配置</dd>
           </div>
-        </div>
-      </div>
-      <div class="suit bottom">favorite</div>
+          <div>
+            <dt>路径</dt>
+            <dd><code id="runtimePath">-</code></dd>
+          </div>
+        </dl>
+      </section>
     </aside>
 
     <section class="stage">
       <section class="hero-panel">
-        <div>
-          <p class="label-caps">独立运行 · 本地处理</p>
-          <h2 id="panelTitle">分析主线</h2>
-          <p class="hero-copy">识别微信聊天记录，选择一个人，生成潜台词分析和最终报告。</p>
-        </div>
-        <div class="stage-meter">
-          <span>环境状态</span>
-          <strong id="environmentBadge">检测中</strong>
-          <div><i></i></div>
-        </div>
+        <p class="label-caps" id="panelKicker">I. 分析主线</p>
+        <h2 id="panelTitle">分析主线</h2>
+        <p class="hero-copy" id="panelCopy">识别微信聊天记录，选择一个人，生成潜台词分析和最终报告。</p>
       </section>
 
       <section class="panes">
         <article class="pane visible" id="pane-main">
-          <div class="pane-copy">
-            <span class="material-symbols-outlined pane-icon">theater_comedy</span>
-            <p class="label-caps">功能一</p>
-            <h3>分析主线</h3>
-            <p>从微信自动识别聊天记录，选择角色，生成分析并把最终报告渲染在当前页面。</p>
-          </div>
-
           <section class="workflow-board">
             <div class="workflow-card">
-              <p class="label-caps">01 · 识别</p>
-              <h4>扫描微信</h4>
+              <p class="label-caps">I. 识别</p>
+              <h3>扫描微信</h3>
               <p>检查环境、解密数据库并读取联系人。</p>
               <div class="actions">
-                <button class="primary" id="discoverBtn"><span class="material-symbols-outlined">manage_search</span>一键识别微信</button>
-                <button class="ghost-button" id="loadContactsBtn"><span class="material-symbols-outlined">groups</span>读取联系人</button>
+                <button class="primary" id="discoverBtn">一键识别微信</button>
+                <button class="secondary" id="loadContactsBtn">读取联系人</button>
               </div>
             </div>
 
             <div class="workflow-card">
-              <p class="label-caps">02 · 角色</p>
-              <h4>选择对象</h4>
+              <p class="label-caps">II. 选择对象</p>
+              <h3>角色选择</h3>
               <div class="contact-toolbar">
                 <label class="search-field">
-                  <span class="material-symbols-outlined">manage_search</span>
-                  <input id="contactSearch" type="search" placeholder="搜索联系人">
+                  <span>搜索联系人</span>
+                  <input id="contactSearch" type="search" placeholder="输入姓名或微信号">
                 </label>
-                <button class="ghost-button" id="contactsRefreshBtn"><span class="material-symbols-outlined">refresh</span>刷新</button>
+                <button class="secondary" id="contactsRefreshBtn">刷新</button>
               </div>
               <div class="contact-list compact" id="contactList"></div>
               <div class="actions sticky-actions">
-                <button class="secondary" id="extractBtn" disabled><span class="material-symbols-outlined">arrow_forward</span>提取并统计</button>
+                <button class="primary" id="extractBtn" disabled>提取并统计</button>
               </div>
             </div>
 
             <div class="workflow-card">
-              <p class="label-caps">03 · 分析</p>
-              <h4>潜台词扫描</h4>
+              <p class="label-caps">III. 分析</p>
+              <h3>潜台词扫描</h3>
               <label class="switch">
                 <input id="useLlm" type="checkbox">
                 <span></span>
                 <strong>使用模型深度分析</strong>
               </label>
               <div class="actions">
-                <button class="secondary" id="analyzeBtn"><span class="material-symbols-outlined">auto_awesome</span>生成分析</button>
-                <button class="primary" id="reportBtn"><span class="material-symbols-outlined">article</span>生成报告</button>
+                <button class="secondary" id="analyzeBtn">生成分析</button>
+                <button class="primary" id="reportBtn">生成报告</button>
               </div>
               <pre class="preview" id="analysisPreview">尚未生成分析。</pre>
             </div>
           </section>
 
-          <section class="embedded-report">
+          <section class="report-panel">
             <div class="report-head">
               <div>
-                <p class="label-caps">报告预览</p>
-                <h4>最终分析报告</h4>
+                <p class="label-caps">IV. 报告</p>
+                <h3>结果分析报告</h3>
               </div>
-              <a class="secondary link-button disabled" id="openReport" href="#" aria-disabled="true"><span class="material-symbols-outlined">open_in_new</span>独立打开</a>
+              <a class="secondary link-button disabled" id="openReport" href="#" aria-disabled="true">独立打开</a>
             </div>
             <div class="report-slot" id="reportSlot">暂无报告。</div>
             <div class="report-stage" id="reportStage">
-              <div class="report-empty">
-                <span class="material-symbols-outlined">theater_comedy</span>
-                <p>报告会在这里登场。</p>
-              </div>
-              <iframe id="reportFrame" title="恋情分析报告"></iframe>
+              <div class="report-empty">报告会在这里显示。</div>
+              <div id="reportMount"></div>
             </div>
           </section>
         </article>
 
         <article class="pane" id="pane-archive">
-          <div class="pane-copy">
-            <span class="material-symbols-outlined pane-icon">masks</span>
-            <p class="label-caps">功能二</p>
-            <h3>角色档案</h3>
-            <p>查看过往分析记录。每次生成报告后，会按角色自动存档。</p>
-          </div>
+          <section class="section-head">
+            <p class="label-caps">II. 角色档案</p>
+            <h3>过往分析记录</h3>
+            <p>每次生成报告后自动存档；不需要的档案可以直接删除。</p>
+          </section>
           <div class="archive-grid" id="archives"></div>
         </article>
 
         <article class="pane" id="pane-personality">
-          <div class="pane-copy">
-            <span class="material-symbols-outlined pane-icon">psychology</span>
-            <p class="label-caps">功能三</p>
-            <h3>恋爱人格</h3>
-            <p>这是关于你自己的恋爱人格分析，用来识别你在亲密关系里的默认剧本。</p>
-          </div>
+          <section class="section-head">
+            <p class="label-caps">III. 恋爱人格</p>
+            <h3>你的关系模式</h3>
+            <p>这是关于你自己的恋爱人格分析，不和“角色档案”重复。</p>
+          </section>
           <section class="personality-panel">
             <div class="quiz-progress">
-              <span>第 3 题</span>
+              <span>第 III 题</span>
               <strong>3 / 10</strong>
               <div><i></i></div>
             </div>
             <h4>对方三个小时后回“刚忙完”，你的第一反应是？</h4>
             <div class="quiz-grid">
-              <button class="quiz-option"><span>A</span>松一口气。TA只是忙，逻辑合理。</button>
-              <button class="quiz-option"><span>B</span>怀疑。谁会刚好忙到这个点？</button>
-              <button class="quiz-option"><span>C</span>无所谓。我还没看手机。</button>
-              <button class="quiz-option"><span>D</span>慌。先在备忘录写三版回复。</button>
+              <button class="quiz-option"><span>I.</span>松一口气。TA只是忙，逻辑合理。</button>
+              <button class="quiz-option"><span>II.</span>怀疑。谁会刚好忙到这个点？</button>
+              <button class="quiz-option"><span>III.</span>无所谓。我还没看手机。</button>
+              <button class="quiz-option"><span>IV.</span>慌。先在备忘录写三版回复。</button>
             </div>
           </section>
         </article>
 
         <article class="pane" id="pane-settings">
-          <div class="pane-copy">
-            <span class="material-symbols-outlined pane-icon">tune</span>
-            <p class="label-caps">功能四</p>
-            <h3>设置</h3>
-            <p>配置 API、检查运行环境，并选择界面颜色风格。</p>
-          </div>
+          <section class="section-head">
+            <p class="label-caps">IV. 设置</p>
+            <h3>运行与界面</h3>
+            <p>配置模型接口、检查环境，并选择界面颜色风格。</p>
+          </section>
           <div class="actions">
-            <button class="secondary" id="setupBtn"><span class="material-symbols-outlined">sync</span>运行环境检查</button>
+            <button class="secondary" id="setupBtn">运行环境检查</button>
           </div>
           <section class="config-panel">
             <div>
               <p class="label-caps">模型配置</p>
-              <h4>模型接口配置</h4>
-              <p>用于“潜台词扫描”。API Key 只保存在当前本地服务进程内，不写入项目文件。</p>
+              <h4>接口设置</h4>
+              <p>API Key 只保存在当前本地服务进程内，不写入项目文件。</p>
             </div>
             <div class="config-grid">
               <label>
@@ -209,9 +179,9 @@
               </label>
               <label class="config-key">
                 <span>API Key</span>
-                <input id="llmApiKey" type="password" autocomplete="off" placeholder="sk-...">
+                <input id="llmApiKey" type="password" autocomplete="off" placeholder="粘贴后自动隐藏">
               </label>
-              <button class="secondary" id="saveConfigBtn"><span class="material-symbols-outlined">encrypted</span>保存配置</button>
+              <button class="primary" id="saveConfigBtn">保存配置</button>
             </div>
             <p class="config-hint" id="configHint">尚未读取模型配置。</p>
           </section>
@@ -219,9 +189,9 @@
             <p class="label-caps">界面风格</p>
             <h4>颜色风格</h4>
             <div class="theme-grid">
-              <button class="theme-choice" data-theme="theater">暗场小丑</button>
-              <button class="theme-choice active" data-theme="neutral">中性幕布</button>
-              <button class="theme-choice" data-theme="sweet">甜蜜粉金</button>
+              <button class="theme-choice" data-theme="rose"><span>I.</span>玫瑰色</button>
+              <button class="theme-choice" data-theme="gold"><span>II.</span>暗金</button>
+              <button class="theme-choice active" data-theme="minimal"><span>III.</span>现代简约</button>
             </div>
           </section>
         </article>
@@ -243,6 +213,6 @@
     <span>本地运行，数据留在你的电脑。</span>
   </footer>
 
-  <script src="app.js?v=20260424-6"></script>
+  <script src="app.js?v=20260424-7"></script>
 </body>
 </html>

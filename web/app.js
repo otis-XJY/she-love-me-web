@@ -17,6 +17,20 @@ const PROVIDER_DEFAULTS = {
   anthropic: { baseUrl: "https://api.anthropic.com/v1", model: "claude-3-5-sonnet-latest" },
   gemini: { baseUrl: "https://generativelanguage.googleapis.com/v1beta", model: "gemini-1.5-pro" },
 };
+const PANE_META = {
+  main: ["I. 分析主线", "分析主线", "识别微信聊天记录，选择一个人，生成潜台词分析和最终报告。"],
+  archive: ["II. 角色档案", "角色档案", "查看过往分析记录，并删除不需要的档案。"],
+  personality: ["III. 恋爱人格", "恋爱人格", "关于你自己的关系模式分析，不和角色档案重复。"],
+  settings: ["IV. 设置", "设置", "配置模型接口、检查环境，并选择界面颜色风格。"],
+};
+
+function esc(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
 
 function log(message, data) {
   const line = `[${new Date().toLocaleTimeString()}] ${message}`;
@@ -36,9 +50,7 @@ async function api(path, options = {}) {
       body: options.body ? JSON.stringify(options.body) : undefined,
     });
     const data = await res.json();
-    if (!res.ok) {
-      throw Object.assign(new Error(data.error || "请求失败"), { data });
-    }
+    if (!res.ok) throw Object.assign(new Error(data.error || "请求失败"), { data });
     return data;
   } finally {
     setBusy(false);
@@ -54,54 +66,35 @@ function setBusy(value) {
 }
 
 function switchPane(name) {
-  const aliases = {
-    setup: "settings",
-    decrypt: "main",
-    contact: "main",
-    analysis: "main",
-    report: "main",
-  };
+  const aliases = { setup: "settings", decrypt: "main", contact: "main", analysis: "main", report: "main" };
   name = aliases[name] || name;
-  document.querySelectorAll(".step").forEach((el) => el.classList.toggle("active", el.dataset.step === name));
   document.querySelectorAll(".nav-item").forEach((el) => el.classList.toggle("active", el.dataset.step === name));
   document.querySelectorAll(".pane").forEach((el) => el.classList.toggle("visible", el.id === `pane-${name}`));
-  const titles = {
-    main: "分析主线",
-    archive: "角色档案",
-    personality: "恋爱人格",
-    settings: "设置",
-  };
-  $("panelTitle").textContent = titles[name] || "分析主线";
+  const [kicker, title, copy] = PANE_META[name] || PANE_META.main;
+  $("panelKicker").textContent = kicker;
+  $("panelTitle").textContent = title;
+  $("panelCopy").textContent = copy;
 }
 
 function renderStatus(status) {
   state.status = status;
   $("runtimePath").textContent = status.runtime_root || "-";
   $("llmState").textContent = status.llm_configured ? `${status.llm_provider || "openai"} · ${status.llm_model || "已配置"}` : "未配置";
+  $("environmentBadge").textContent = status.environment_label || (status.environment_ready ? "环境就绪" : "环境异常");
+  $("environmentBadge").classList.toggle("bad", !status.environment_ready);
+
   if ($("llmProvider")) $("llmProvider").value = status.llm_provider || "openai";
   if ($("llmBaseUrl")) $("llmBaseUrl").value = status.llm_base_url || "";
   if ($("llmModel")) $("llmModel").value = status.llm_model || "";
-  if ($("environmentBadge")) {
-    $("environmentBadge").textContent = status.environment_label || (status.environment_ready ? "环境就绪" : "环境异常");
-    $("environmentBadge").classList.toggle("bad", !status.environment_ready);
-  }
   if ($("configHint")) {
-    const provider = status.llm_provider || "openai";
-    const base = status.llm_base_url || "未设置 BaseURL";
-    const key = status.llm_key_hint || "未设置";
-    $("configHint").textContent = `当前：${provider} · ${base} · ${status.llm_model || "未设置模型"} · ${key}`;
+    $("configHint").textContent = `当前：${status.llm_provider || "openai"} · ${status.llm_base_url || "未设置 BaseURL"} · ${status.llm_model || "未设置模型"} · ${status.llm_key_hint || "未设置"}`;
   }
 
-  const ready = status.scripts_ready;
   const strip = $("runtimeStatus");
-  strip.querySelector(".dot").className = `dot ${status.environment_ready ? "ok" : "bad"}`;
-  strip.querySelector("span:last-child").textContent = status.environment_label || (status.environment_ready ? "环境就绪" : "环境异常");
-
+  strip.querySelector("i").className = status.environment_ready ? "ok" : "bad";
+  strip.querySelector("span").textContent = status.environment_label || (status.environment_ready ? "环境就绪" : "环境异常");
   renderArchives(status.archives || []);
-
-  if (status.latest_report) {
-    setReport(status.latest_report);
-  }
+  if (status.latest_report) setReport(status.latest_report, { silent: true });
 }
 
 function renderArchives(archives) {
@@ -111,20 +104,34 @@ function renderArchives(archives) {
     el.innerHTML = `<div class="archive-empty">暂无角色档案。完成一次识别并生成报告后，会自动存档在这里。</div>`;
     return;
   }
-  el.innerHTML = archives.map((item, index) => `
-    <button class="archive-card" data-index="${index}">
-      <span>${item.relationship_type || "角色档案"}</span>
-      <strong title="${item.contact || "未命名"}">${item.contact || "未命名"}</strong>
-      <p>${item.message_count ? `${Number(item.message_count).toLocaleString()} 条消息 · ` : ""}${formatArchiveDate(item.created_at)}</p>
-    </button>
-  `).join("");
-  el.querySelectorAll(".archive-card").forEach((button) => {
+  el.innerHTML = archives.map((item, index) => {
+    const contact = item.contact || "未命名";
+    const count = item.message_count ? `${Number(item.message_count).toLocaleString()} 条消息 · ` : "";
+    return `
+      <article class="archive-card" data-index="${index}">
+        <button class="archive-open" type="button">
+          <span>${esc(item.relationship_type || "角色档案")}</span>
+          <strong title="${esc(contact)}">${esc(contact)}</strong>
+          <p>${count}${formatArchiveDate(item.created_at)}</p>
+        </button>
+        <button class="archive-delete" type="button" aria-label="删除 ${esc(contact)} 的档案">删除</button>
+      </article>
+    `;
+  }).join("");
+  el.querySelectorAll(".archive-open").forEach((button) => {
     button.addEventListener("click", () => {
-      const item = archives[Number(button.dataset.index)];
+      const item = archives[Number(button.closest(".archive-card").dataset.index)];
       if (item?.report_url) {
         setReport({ name: item.report_name || "报告", url: item.report_url });
-        switchPane("report");
+        switchPane("main");
       }
+    });
+  });
+  el.querySelectorAll(".archive-delete").forEach((button) => {
+    button.addEventListener("click", (event) => {
+      event.stopPropagation();
+      const item = archives[Number(button.closest(".archive-card").dataset.index)];
+      deleteArchive(item).catch(handleError);
     });
   });
 }
@@ -134,32 +141,87 @@ function formatArchiveDate(value) {
   return String(value).replace("T", " ").slice(0, 16);
 }
 
-function setReport(report) {
+async function deleteArchive(item) {
+  if (!item) return;
+  log(`删除角色档案：${item.contact || item.report_name || item.id}`);
+  const data = await api("/api/archive/delete", {
+    method: "POST",
+    body: { id: item.id, report_name: item.report_name },
+  });
+  renderStatus(data.status);
+  log("角色档案已删除", data.deleted);
+}
+
+function setReport(report, options = {}) {
   const url = `${API_BASE}${encodeURI(report.url)}`;
-  const openReport = $("openReport");
   state.latestReportUrl = url;
+  const openReport = $("openReport");
   if (openReport) {
     openReport.href = url;
     openReport.dataset.href = url;
     openReport.removeAttribute("aria-disabled");
     openReport.classList.remove("disabled");
   }
-  if ($("reportSlot")) {
-    $("reportSlot").innerHTML = `当前报告：<button class="inline-report-link" id="reloadReportBtn">${report.name}</button>`;
-  }
-  showReport(url);
-  const reload = $("reloadReportBtn");
-  if (reload) {
-    reload.addEventListener("click", () => showReport(url));
-  }
+  $("reportSlot").innerHTML = `当前报告：<button class="inline-report-link" id="reloadReportBtn">${esc(report.name)}</button>`;
+  $("reloadReportBtn")?.addEventListener("click", () => showReport(url));
+  showReport(url).catch(handleError);
+  if (!options.silent) log("报告已载入当前页面。");
 }
 
-function showReport(url) {
-  const frame = $("reportFrame");
-  if (!frame || !$("reportStage")) return;
-  $("reportStage").classList.add("has-report");
-  if (frame.src !== url) {
-    frame.src = url;
+async function loadScriptOnce(src) {
+  if (document.querySelector(`script[data-report-src="${CSS.escape(src)}"]`)) return;
+  await new Promise((resolve, reject) => {
+    const script = document.createElement("script");
+    script.src = src;
+    script.dataset.reportSrc = src;
+    script.onload = resolve;
+    script.onerror = reject;
+    document.head.appendChild(script);
+  });
+}
+
+function adaptReportCss(css, bodyClass) {
+  return css
+    .replaceAll(":root", ":host")
+    .replaceAll("html", ":host")
+    .replace(/body\.report-tone-/g, ".report-document.report-tone-")
+    .replace(/body::/g, ".report-document::")
+    .replace(/body\s*\{/g, ".report-document {")
+    .concat(`
+      :host { display:block; contain: content; }
+      .report-document { min-height: 100%; overflow: visible; }
+      .report-document::before,
+      .report-document::after { position: absolute; }
+    `);
+}
+
+async function showReport(url) {
+  const mount = $("reportMount");
+  const stage = $("reportStage");
+  if (!mount || !stage) return;
+  stage.classList.add("has-report");
+  const shadow = mount.shadowRoot || (mount.attachShadow ? mount.attachShadow({ mode: "open" }) : null);
+  const root = shadow || mount;
+  root.innerHTML = "";
+  const html = await fetch(url).then((res) => {
+    if (!res.ok) throw new Error("报告读取失败");
+    return res.text();
+  });
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const scripts = [...doc.querySelectorAll("script")];
+  const styles = [...doc.querySelectorAll("style")].map((style) => style.textContent || "").join("\n");
+  const externalScripts = scripts.map((script) => script.src).filter(Boolean);
+  const inlineScripts = scripts.filter((script) => !script.src).map((script) => script.textContent || "");
+  scripts.forEach((script) => script.remove());
+  const bodyClass = doc.body.className || "";
+
+  root.innerHTML = `
+    <style>${adaptReportCss(styles, bodyClass)}</style>
+    <div class="report-document ${esc(bodyClass)}">${doc.body.innerHTML}</div>
+  `;
+  for (const src of externalScripts) await loadScriptOnce(src);
+  for (const code of inlineScripts) {
+    new Function("document", "window", "Chart", code)(root, window, window.Chart);
   }
 }
 
@@ -180,16 +242,15 @@ function renderContacts() {
     const selected = state.selected && state.selected.username === item.username;
     return `
       <button class="contact ${selected ? "selected" : ""}" data-index="${index}">
-        <strong title="${name}">${name}</strong>
-        <span>${item.message_count.toLocaleString()} 条 · ${item.username}</span>
+        <strong title="${esc(name)}">${esc(name)}</strong>
+        <span>${Number(item.message_count || 0).toLocaleString()} 条 · ${esc(item.username)}</span>
       </button>
     `;
   }).join("");
 }
 
 async function refreshStatus() {
-  const data = await api("/api/status");
-  renderStatus(data);
+  renderStatus(await api("/api/status"));
 }
 
 async function runSetup() {
@@ -207,7 +268,7 @@ async function saveConfig() {
     model: $("llmModel").value.trim(),
     api_key: state.pendingApiKey || (inputValue === MASKED_KEY ? "" : inputValue),
   };
-  log("保存模型中转配置");
+  log("保存模型接口配置");
   const data = await api("/api/config", { method: "POST", body });
   renderStatus(data.status);
   state.pendingApiKey = "";
@@ -222,11 +283,9 @@ function applyProviderDefaults(provider) {
 }
 
 function applyUiTheme(theme) {
-  const selected = ["theater", "neutral", "sweet"].includes(theme) ? theme : "theater";
-  document.body.classList.remove("ui-neutral", "ui-sweet");
-  if (selected !== "theater") {
-    document.body.classList.add(`ui-${selected}`);
-  }
+  const selected = ["rose", "gold", "minimal"].includes(theme) ? theme : "minimal";
+  document.body.classList.remove("ui-rose", "ui-gold", "ui-minimal");
+  document.body.classList.add(`ui-${selected}`);
   localStorage.setItem("ta-ui-theme", selected);
   document.querySelectorAll(".theme-choice").forEach((button) => {
     button.classList.toggle("active", button.dataset.theme === selected);
@@ -243,13 +302,6 @@ function maskApiKeyFromPaste(event) {
   log("API Key 已粘贴并隐藏。");
 }
 
-async function runDecrypt() {
-  log("开始解密。这一步可能需要几分钟。");
-  const data = await api("/api/decrypt", { method: "POST" });
-  renderStatus(data.status);
-  log("解密完成", data.result.stderr || data.result.stdout);
-}
-
 async function loadContacts() {
   log("读取联系人列表");
   const data = await api("/api/contacts", { method: "POST" });
@@ -257,23 +309,20 @@ async function loadContacts() {
   state.selected = null;
   $("extractBtn").disabled = true;
   renderContacts();
-  switchPane("contact");
+  switchPane("main");
   log(`读取到 ${state.contacts.length} 个联系人`);
 }
 
 async function discoverWechat() {
-  log("开始一键识别微信：检查环境、解密数据库、扫描联系人");
+  log("开始识别微信：检查环境、解密数据库、扫描联系人");
   const data = await api("/api/discover", { method: "POST" });
   renderStatus(data.status);
   state.contacts = data.contacts || [];
   state.selected = null;
   $("extractBtn").disabled = true;
   renderContacts();
-  switchPane("contact");
-  log(`微信识别完成，读取到 ${state.contacts.length} 个联系人`, {
-    setup: data.setup?.json || data.setup?.stderr,
-    decrypt: data.decrypt?.stderr || data.decrypt?.stdout,
-  });
+  switchPane("main");
+  log(`微信识别完成，读取到 ${state.contacts.length} 个联系人`);
 }
 
 async function extractAndStats() {
@@ -284,7 +333,6 @@ async function extractAndStats() {
   log("消息提取完成", extracted.result.json || extracted.result.stderr);
   const stats = await api("/api/stats", { method: "POST" });
   log("统计完成", stats.stats.scores || stats.result.stdout);
-  switchPane("analysis");
 }
 
 async function analyze() {
@@ -294,16 +342,14 @@ async function analyze() {
   renderStatus(data.status);
   $("analysisPreview").textContent = JSON.stringify(data.analysis, null, 2);
   log("analysis.json 已生成", { mode: data.analysis._analysis_mode });
-  switchPane("report");
 }
 
 async function report() {
-  log("生成 HTML 报告");
+  log("生成报告");
   const data = await api("/api/report", { method: "POST" });
   renderStatus(data.status);
   setReport(data.report);
   log("报告已生成", data.report);
-  switchPane("report");
 }
 
 function bind() {
@@ -312,14 +358,10 @@ function bind() {
     if (el) el.addEventListener(event, handler);
   };
 
-  document.querySelectorAll(".step").forEach((button) => {
-    button.addEventListener("click", () => switchPane(button.dataset.step));
-  });
   document.querySelectorAll(".nav-item").forEach((button) => {
     button.addEventListener("click", () => switchPane(button.dataset.step));
   });
   on("discoverBtn", "click", () => discoverWechat().catch(handleError));
-  on("discoverBtn2", "click", () => discoverWechat().catch(handleError));
   on("saveConfigBtn", "click", () => saveConfig().catch(handleError));
   on("llmProvider", "change", (event) => applyProviderDefaults(event.target.value));
   on("llmApiKey", "paste", maskApiKeyFromPaste);
@@ -327,22 +369,11 @@ function bind() {
     if ($("llmApiKey")?.value !== MASKED_KEY) state.pendingApiKey = "";
   });
   on("setupBtn", "click", () => runSetup().catch(handleError));
-  on("decryptBtn", "click", () => runDecrypt().catch(handleError));
   on("loadContactsBtn", "click", () => loadContacts().catch(handleError));
   on("contactsRefreshBtn", "click", () => loadContacts().catch(handleError));
   on("extractBtn", "click", () => extractAndStats().catch(handleError));
   on("analyzeBtn", "click", () => analyze().catch(handleError));
   on("reportBtn", "click", () => report().catch(handleError));
-  on("openReport", "click", (event) => {
-    const href = $("openReport").dataset.href || $("openReport").href;
-    if (!href) {
-      event.preventDefault();
-      log("还没有可打开的报告，请先生成报告。");
-      return;
-    }
-    $("openReport").classList.remove("disabled");
-    return;
-  });
   on("consoleHead", "click", (event) => {
     if (event.target.closest("#clearLog")) return;
     $("consoleWrap").classList.toggle("expanded");
@@ -370,7 +401,7 @@ function handleError(error) {
   log(`失败：${error.message}`, detail);
 }
 
-applyUiTheme(localStorage.getItem("ta-ui-theme") || "neutral");
+applyUiTheme(localStorage.getItem("ta-ui-theme") || "minimal");
 bind();
 switchPane("main");
 refreshStatus().catch(handleError);

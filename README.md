@@ -1,58 +1,104 @@
-# 她爱你吗 Web
+# TA回我了
 
-这是 `she-love-me` skill 的独立本地 Web 包装版，不依赖 Codex、Claude Code、Cursor 或任何 Agent 运行时。
+本地运行的微信聊天恋爱分析工具。它会在你的电脑上读取微信聊天记录，生成互动统计、潜台词分析、角色档案和结果分析报告。
 
-## 运行
+项目默认只在本机运行，不依赖 Codex、Claude Code、Cursor 或任何 Agent 运行时。
+
+> 当前仓库地址：<https://github.com/Exekiel179/she-love-me-web>
+
+## 项目截图
+
+![首页](docs/screenshots/hero.png)
+
+![分析主线](docs/screenshots/analysis-flow.png)
+
+![恋爱人格](docs/screenshots/personality.png)
+
+![设置](docs/screenshots/settings.png)
+
+## 功能
+
+- 分析主线：读取微信聊天、选择分析对象、生成结果分析报告。
+- 角色档案：保存每次分析记录，后续可以回看或删除。
+- 恋爱人格：通过问答生成自己的恋爱沟通倾向。
+- 设置：配置模型接口、查看最终请求地址、测试连通性、切换 UI 风格。
+
+## 快速开始
 
 ```powershell
-cd F:\Projects\she-love-me-web
 python server.py
 ```
 
-打开：
+浏览器打开：
 
 ```text
 http://127.0.0.1:8765
 ```
 
-点击页面里的「一键识别微信」会自动执行：
+首次使用建议先进入「设置」：
+
+1. 选择接口模式。
+2. 填写 BaseURL、模型和 API Key。
+3. 点击「测试连通性」。
+4. 连通成功后回到「分析主线」读取联系人并生成报告。
+
+## 模型接口
+
+设置页支持三种接口模式：
+
+- OpenAI：请求 `/chat/completions`，适合 OpenAI 兼容中转。
+- Anthropic：请求 `/messages`，适合 Anthropic 原生接口。
+- Gemini：请求 `/models/{model}:generateContent`。
+
+页面会显示“最终请求地址”，用于确认 BaseURL 拼接是否正确。
+
+如果你的中转服务是 OpenAI 兼容接口，即使模型名称是 Claude，也通常应该选择 `OpenAI` 模式。
+
+## 本地配置持久化
+
+模型配置会保存到本机用户目录：
 
 ```text
-检查 Python / 微信进程
-  -> 自动准备 wechat-decrypt
-  -> 从正在登录的微信识别并解密数据库
-  -> 扫描联系人和消息数量
-  -> 进入联系人选择
+%LOCALAPPDATA%\TAHuiwole\config.json
 ```
 
-## 可选：启用 OpenAI 兼容模型分析
+保存内容包括接口模式、BaseURL、模型和 API Key。这个文件不在项目目录里，也不会提交到 GitHub。
 
-不配置模型时，Web 项目会使用本地统计数据生成一份启发式 `analysis.json`，可以直接生成 HTML 报告。
-
-如果你想让“大模型深度分析”也在 Web 里完成，设置这些环境变量：
+也可以用环境变量覆盖配置：
 
 ```powershell
+$env:SHE_LOVE_ME_LLM_PROVIDER="openai"
 $env:SHE_LOVE_ME_LLM_BASE_URL="https://api.openai.com/v1"
-$env:SHE_LOVE_ME_LLM_API_KEY="你的 API Key"
 $env:SHE_LOVE_ME_LLM_MODEL="gpt-4.1"
+$env:SHE_LOVE_ME_LLM_API_KEY="你的 API Key"
 python server.py
 ```
 
-任何兼容 `/chat/completions` 的服务都可以使用。这个项目不会调用 Codex 或 Claude Code。
+## 数据位置
 
-## 目录
+运行中产生的数据默认保存在本机：
 
 ```text
-server.py                     本地 Web/API 服务
-web/                          前端界面
-runtime/she-love-me/scripts/   从 skill 复制出的原始处理脚本
-runtime/she-love-me/vendor/    wechat-decrypt 会被自动 clone 到这里
-runtime/she-love-me/data/      messages / stats / analysis / chat_history
-runtime/she-love-me/reports/   生成的 HTML 报告
+runtime/she-love-me/data/       聊天记录、统计结果、分析 JSON
+runtime/she-love-me/reports/    生成的报告
+runtime/she-love-me/archives/   角色档案
 ```
 
-## 注意
+这些目录已加入 `.gitignore`，不会提交到仓库。
+
+## 注意事项
 
 - Windows 解密微信数据库通常需要管理员权限启动终端和微信。
-- 数据默认只在本机 `runtime/she-love-me/data` 和 `runtime/she-love-me/reports` 下流转。
-- 如果启用远程 LLM，聊天记录片段会按你的配置发送给对应模型服务。
+- 微信需要处于已登录状态。
+- 如果启用远程模型分析，聊天片段会发送到你配置的模型服务。
+- 大聊天记录可能导致中转服务超时。当前已做输入截断和 504 自动精简重试，后续会继续改成分段摘要流程。见 Issue：<https://github.com/Exekiel179/she-love-me-web/issues/1>
+
+## 开发结构
+
+```text
+server.py                       本地 Web/API 服务
+web/                            前端界面
+web/assets/cursors/             动态鼠标资源
+docs/screenshots/               README 截图
+runtime/she-love-me/scripts/    微信读取、统计和报告脚本
+```

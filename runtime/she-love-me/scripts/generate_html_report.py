@@ -203,7 +203,7 @@ def render_personality(personality, contact_name):
         </div>"""
         pursue_html = f"""
       <div class="pursue-alert">
-        ⚠️ <strong>追逃循环已形成</strong>：你越追，TA越逃；TA越逃，你越焦虑——负向循环持续强化。
+        <strong>追逃循环已形成</strong>：你越追，TA越逃；TA越逃，你越焦虑，负向循环持续强化。
         {loop_html}
       </div>"""
 
@@ -229,7 +229,7 @@ def render_personality(personality, contact_name):
     if lang_mismatch:
         lang_mismatch_html = """
       <div class="lang-mismatch-alert">
-        💬 <strong>爱的语言不匹配</strong>：你们表达爱的方式不同，导致给予了但对方感受不到。
+        <strong>爱的语言不匹配</strong>：你们表达爱的方式不同，导致给予了但对方感受不到。
       </div>"""
 
     return f"""
@@ -272,13 +272,13 @@ def render_strategist(strategist):
             action = escape_html(s.get("action", ""))
             reason = escape_html(s.get("reason", ""))
             quote  = escape_html(s.get("quote", ""))
-            html   = f'<li class="strategy-stop-item">❌ {action}'
+            html   = f'<li class="strategy-stop-item"><span class="item-mark">停止</span>{action}'
             if reason:
                 html += f'<div class="strategy-reason">{reason}</div>'
             if quote:
                 html += f'<div class="strategy-quote">「{quote}」</div>'
             return html + '</li>'
-        return f'<li class="strategy-stop-item">❌ {escape_html(str(s))}</li>'
+        return f'<li class="strategy-stop-item"><span class="item-mark">停止</span>{escape_html(str(s))}</li>'
 
     def render_start_item(s):
         if isinstance(s, dict):
@@ -286,15 +286,15 @@ def render_strategist(strategist):
             timing = escape_html(s.get("timing", ""))
             reason = escape_html(s.get("reason", ""))
             script = escape_html(s.get("script", ""))
-            html   = f'<li class="strategy-start-item">✅ {action}'
+            html   = f'<li class="strategy-start-item"><span class="item-mark">开始</span>{action}'
             if timing:
-                html += f'<div class="strategy-timing">⏰ 时机：{timing}</div>'
+                html += f'<div class="strategy-timing">时机：{timing}</div>'
             if reason:
                 html += f'<div class="strategy-reason">{reason}</div>'
             if script:
                 html += f'<div class="strategy-script">参考话术：「{script}」</div>'
             return html + '</li>'
-        return f'<li class="strategy-start-item">✅ {escape_html(str(s))}</li>'
+        return f'<li class="strategy-start-item"><span class="item-mark">开始</span>{escape_html(str(s))}</li>'
 
     stops_html  = "\n".join(render_stop_item(s) for s in stops)
     starts_html = "\n".join(render_start_item(s) for s in starts)
@@ -306,7 +306,7 @@ def render_strategist(strategist):
         wa_reason  = escape_html(walkaway.get("reason", ""))
         walkaway_html = f"""
       <div class="walkaway-card">
-        <div class="walkaway-label">🚩 止损红线</div>
+        <div class="walkaway-label">止损红线</div>
         {f'<p class="walkaway-trigger">如果在 <strong>{wa_tf}</strong> 内，对方仍然出现：{wa_trigger}</p>' if wa_trigger else ''}
         {f'<p class="walkaway-reason">{wa_reason}</p>' if wa_reason else ''}
       </div>"""
@@ -381,7 +381,7 @@ def render_relationship_stage(rel_stage):
     if is_situ:
         situ_badge = f"""
       <div class="situ-badge">
-        <span>⚠ 实名化前夜</span> · 除了一个名分，其余情侣待遇你们都有了
+        <span>实名化前夜</span> · 除了一个名分，其余情侣待遇你们都有了
       </div>
       {f'<p class="stage-evidence">证据：{situ_ev}</p>' if situ_ev else ''}"""
 
@@ -421,7 +421,7 @@ def render_emotional_asymmetry(asym):
         t_event = escape_html(turning.get("event", ""))
         turning_html = f"""
       <div class="asym-turning">
-        <span class="asym-turning-label">⚡ 关键转折点</span>
+        <span class="asym-turning-label">关键转折点</span>
         <span class="asym-turning-date">{t_date}</span>
         <p class="asym-turning-event">{t_event}</p>
       </div>"""
@@ -436,8 +436,8 @@ def render_emotional_asymmetry(asym):
           <div class="asym-score-label">情感对称性</div>
         </div>
         <div class="asym-roles">
-          <span class="asym-role anchor-role">⚓ {anchor_label} = 锚</span>
-          <span class="asym-role float-role">🪁 {float_label} = 浮标</span>
+          <span class="asym-role anchor-role">{anchor_label} = 锚</span>
+          <span class="asym-role float-role">{float_label} = 浮标</span>
         </div>
       </div>
       <div class="asym-bar-track"><div class="asym-bar-fill" style="width:{score_pct}%;background:{score_color};"></div></div>
@@ -632,9 +632,12 @@ def render_html(stats, analysis, contact_name):
 
     date_range = basic.get("date_range", ["?", "?"])
     total_days = basic.get("total_days", 1)
+    total_messages = basic.get("total_messages", 0)
+    avg_daily = basic.get("avg_daily", 0)
     my_ratio   = int(basic.get("my_ratio", 0) * 100)
     their_ratio = int(basic.get("their_ratio", 0) * 100)
     speed_ratio = reply.get("speed_ratio", 1)
+    imbalance = max(0, simp - loved - 10)
 
     trend_icon = {"升温中": "升", "平稳维持": "稳", "逐渐降温": "降", "已经凉透": "冷"}.get(
         analysis.get("relationship_trend", ""), "势"
@@ -1824,292 +1827,622 @@ def render_html(stats, analysis, contact_name):
       max-width: 360px;
     }}
   }}
+
+  /* 应用内报告：与外层 UI 使用同一套版式变量 */
+  body,
+  .report-document {{
+    --report-bg: #f5f3ee;
+    --report-bg-2: #e9e3d8;
+    --report-panel: rgba(255, 252, 247, .92);
+    --report-panel-strong: #fffdf8;
+    --report-ink: #211f1c;
+    --report-soft: #5c5750;
+    --report-muted: #8a8075;
+    --report-line: rgba(47, 42, 35, .18);
+    --report-accent: #6f6251;
+    --report-accent-strong: #2c2924;
+    --report-good: #1f8d5a;
+    --report-danger: #b64242;
+    --report-shadow: 0 18px 50px rgba(48, 41, 31, .12);
+    background: transparent !important;
+    color: var(--report-ink);
+    font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
+    min-height: auto;
+  }}
+  body.report-tone-positive,
+  .report-document.report-tone-positive {{
+    --report-bg: #fff1f2;
+    --report-bg-2: #f3c9ce;
+    --report-panel: rgba(255, 248, 246, .92);
+    --report-panel-strong: #fffaf7;
+    --report-ink: #35151b;
+    --report-soft: #6f4048;
+    --report-muted: #9c6670;
+    --report-line: rgba(125, 54, 66, .2);
+    --report-accent: #b94f64;
+    --report-accent-strong: #7b2435;
+    --report-good: #247b5b;
+    --report-danger: #9f2d3f;
+    --report-shadow: 0 20px 56px rgba(139, 54, 70, .16);
+  }}
+  body.report-tone-negative,
+  .report-document.report-tone-negative {{
+    --report-bg: #11100d;
+    --report-bg-2: #2a2418;
+    --report-panel: rgba(31, 28, 22, .9);
+    --report-panel-strong: #19160f;
+    --report-ink: #f6eddb;
+    --report-soft: #d7c3a2;
+    --report-muted: #a99776;
+    --report-line: rgba(215, 177, 101, .24);
+    --report-accent: #c89c48;
+    --report-accent-strong: #f0c56d;
+    --report-good: #64c28f;
+    --report-danger: #df6b62;
+    --report-shadow: 0 24px 70px rgba(0, 0, 0, .32);
+  }}
+  :host-context(body.ui-rose) .report-document {{
+    --report-bg: #fff1f2;
+    --report-bg-2: #f3c9ce;
+    --report-panel: rgba(255, 248, 246, .92);
+    --report-panel-strong: #fffaf7;
+    --report-ink: #35151b;
+    --report-soft: #6f4048;
+    --report-muted: #9c6670;
+    --report-line: rgba(125, 54, 66, .2);
+    --report-accent: #b94f64;
+    --report-accent-strong: #7b2435;
+  }}
+  :host-context(body.ui-gold) .report-document {{
+    --report-bg: #11100d;
+    --report-bg-2: #2a2418;
+    --report-panel: rgba(31, 28, 22, .9);
+    --report-panel-strong: #19160f;
+    --report-ink: #f6eddb;
+    --report-soft: #d7c3a2;
+    --report-muted: #a99776;
+    --report-line: rgba(215, 177, 101, .24);
+    --report-accent: #c89c48;
+    --report-accent-strong: #f0c56d;
+  }}
+  :host-context(body.ui-minimal) .report-document {{
+    --report-bg: #f5f3ee;
+    --report-bg-2: #e9e3d8;
+    --report-panel: rgba(255, 252, 247, .92);
+    --report-panel-strong: #fffdf8;
+    --report-ink: #211f1c;
+    --report-soft: #5c5750;
+    --report-muted: #8a8075;
+    --report-line: rgba(47, 42, 35, .18);
+    --report-accent: #6f6251;
+    --report-accent-strong: #2c2924;
+  }}
+  body::before,
+  body::after,
+  .report-document::before,
+  .report-document::after {{
+    display: none !important;
+  }}
+  .hero,
+  .footer {{
+    display: none !important;
+  }}
+  .report-shell {{
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: clamp(22px, 4vw, 42px);
+    color: var(--report-ink);
+  }}
+  .report-overview {{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
+    gap: clamp(22px, 5vw, 64px);
+    align-items: end;
+    padding: clamp(26px, 5vw, 58px);
+    border: 1px solid var(--report-line);
+    background:
+      radial-gradient(circle at 8% 12%, color-mix(in srgb, var(--report-accent) 18%, transparent), transparent 32%),
+      linear-gradient(135deg, color-mix(in srgb, var(--report-bg) 82%, transparent), color-mix(in srgb, var(--report-bg-2) 74%, transparent)),
+      var(--report-panel-strong);
+    box-shadow: var(--report-shadow);
+  }}
+  .report-kicker,
+  .section-label {{
+    margin: 0 0 14px;
+    color: var(--report-accent);
+    font-size: 14px;
+    font-weight: 800;
+    letter-spacing: .04em;
+    text-transform: none;
+  }}
+  .report-title {{
+    margin: 0;
+    color: var(--report-ink);
+    font-size: clamp(48px, 8vw, 92px);
+    line-height: .98;
+    letter-spacing: -.07em;
+    font-weight: 900;
+  }}
+  .report-subtitle {{
+    max-width: 780px;
+    margin: 22px 0 0;
+    color: var(--report-soft);
+    font-size: clamp(18px, 2.2vw, 24px);
+    line-height: 1.7;
+  }}
+  .report-facts {{
+    display: grid;
+    gap: 10px;
+    margin: 0;
+  }}
+  .report-facts div {{
+    display: grid;
+    grid-template-columns: 76px 1fr;
+    gap: 12px;
+    padding: 14px 0;
+    border-bottom: 1px solid var(--report-line);
+  }}
+  .report-facts dt {{
+    color: var(--report-muted);
+    font-size: 13px;
+  }}
+  .report-facts dd {{
+    color: var(--report-ink);
+    font-size: 15px;
+    font-weight: 800;
+  }}
+  .container,
+  .report-shell .section {{
+    max-width: none;
+  }}
+  .report-shell .section {{
+    margin: clamp(28px, 5vw, 56px) 0 0;
+  }}
+  .section-heading {{
+    display: grid;
+    grid-template-columns: 74px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+    margin-bottom: 22px;
+  }}
+  .section-num {{
+    color: var(--report-accent);
+    font-family: Georgia, "Times New Roman", serif;
+    font-size: 28px;
+    font-style: italic;
+    font-weight: 800;
+    line-height: 1;
+  }}
+  .section-heading h2 {{
+    margin: 0;
+    color: var(--report-ink);
+    font-size: clamp(28px, 4vw, 48px);
+    line-height: 1.05;
+    letter-spacing: -.05em;
+  }}
+  .section-intro {{
+    margin-top: 8px;
+    color: var(--report-soft);
+    font-size: 16px;
+    line-height: 1.75;
+  }}
+  .report-stack {{
+    display: grid;
+    gap: 16px;
+  }}
+  .report-two-col {{
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: 16px;
+  }}
+  .report-card,
+  .score-card,
+  .stat-card,
+  .chart-card,
+  .analysis-card,
+  .finding-card,
+  .warning-card,
+  .person-card,
+  .strategy-col,
+  .roadmap-card,
+  .core-problem-card,
+  .walkaway-card,
+  .stage-wrap,
+  .asym-wrap,
+  .personality-table,
+  .nbm-section,
+  .ea-card,
+  .lang-patterns-wrap,
+  .verdict-card {{
+    border: 1px solid var(--report-line) !important;
+    border-radius: 0 !important;
+    background: var(--report-panel) !important;
+    box-shadow: none !important;
+    color: var(--report-ink);
+  }}
+  .score-grid,
+  .stat-grid,
+  .charts-row,
+  .analysis-row,
+  .portrait-grid,
+  .strategy-grid {{
+    gap: 16px;
+  }}
+  .score-grid {{
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }}
+  .score-card {{
+    min-height: 198px;
+    padding: 26px !important;
+    text-align: left;
+  }}
+  .score-card::before {{
+    display: none;
+  }}
+  .score-value,
+  .stat-main,
+  .verdict-type,
+  .gottman-ratio-val,
+  .asym-score-val {{
+    color: var(--report-ink) !important;
+    background: none !important;
+    -webkit-text-fill-color: currentColor !important;
+  }}
+  .score-label,
+  .stat-meta,
+  .chart-title,
+  .analysis-card-title,
+  .core-problem-label,
+  .roadmap-label,
+  .walkaway-label,
+  .repair-label,
+  .nbm-title,
+  .ingredient-name {{
+    color: var(--report-muted) !important;
+    text-transform: none;
+    letter-spacing: .02em;
+  }}
+  .score-desc,
+  .stat-sub,
+  .finding-analysis,
+  .warning-evidence,
+  .core-problem-text,
+  .roadmap-text,
+  .verdict-text,
+  .stage-desc,
+  .asym-anchor-desc,
+  .repair-val,
+  .portrait-trust,
+  .hero-summary {{
+    color: var(--report-soft) !important;
+  }}
+  .score-bar,
+  .ingredient-track,
+  .compare-track,
+  .sternberg-track,
+  .gottman-bar-track,
+  .asym-bar-track {{
+    background: color-mix(in srgb, var(--report-muted) 20%, transparent) !important;
+  }}
+  .score-bar-fill,
+  .ingredient-fill,
+  .compare-you,
+  .compare-them,
+  .sternberg-fill,
+  .gottman-bar-fill,
+  .asym-bar-fill {{
+    background: linear-gradient(90deg, var(--report-accent), var(--report-accent-strong)) !important;
+  }}
+  .ingredient-list,
+  .compare-list,
+  .findings-list {{
+    border: 1px solid var(--report-line);
+    background: var(--report-panel);
+    padding: 22px;
+  }}
+  .ingredient-row {{
+    grid-template-columns: 104px 1fr 52px;
+  }}
+  .verdict-card {{
+    padding: clamp(26px, 5vw, 48px) !important;
+  }}
+  .verdict-type {{
+    font-size: clamp(38px, 6vw, 68px);
+    line-height: 1.05;
+    letter-spacing: -.06em;
+  }}
+  .verdict-type-badge,
+  .verdict-trend-badge,
+  .horseman-chip,
+  .trait-chip,
+  .warning-badge {{
+    border-radius: 0 !important;
+    border-color: var(--report-line) !important;
+    background: color-mix(in srgb, var(--report-accent) 12%, transparent) !important;
+    color: var(--report-ink) !important;
+  }}
+  .report-note {{
+    margin-top: clamp(32px, 5vw, 58px);
+    padding-top: 18px;
+    border-top: 1px solid var(--report-line);
+    color: var(--report-muted);
+    font-size: 13px;
+    line-height: 1.8;
+  }}
+  @media (max-width: 860px) {{
+    .report-overview,
+    .report-two-col {{
+      grid-template-columns: 1fr;
+    }}
+    .score-grid {{
+      grid-template-columns: 1fr;
+    }}
+    .section-heading {{
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }}
+  }}
 </style>
 </head>
 <body class="report-tone-{report_tone}">
 
-<header class="hero">
-  <div class="hero-brand">TA回我了</div>
-  <div class="hero-layout">
-    <div class="hero-copy">
-      <p class="hero-eyebrow">结果分析报告</p>
-      <h1 class="hero-title">{relationship_type}</h1>
-      <p class="hero-contact">与 <span>{escape_html(contact_name)}</span> 的聊天记录</p>
-      <p class="hero-summary">{relationship_label or verdict}</p>
-    </div>
-    <aside class="hero-ticket">
-      <span>样本范围</span>
-      <strong>{basic.get('total_messages', 0):,}</strong>
-      <i>{date_range[0]} — {date_range[1]}</i>
-      <b>{total_days} 天 · 平均 {basic.get('avg_daily', 0):.1f} 条/天</b>
-    </aside>
-  </div>
-</header>
+<main class="report-shell">
 
-<main class="container">
-
-  <!-- 三大指数 -->
-  <section class="section">
-      <p class="section-label">鉴定指数</p>
-    <div class="score-grid">
-      <div class="score-card simp">
-        <div class="score-mark">I.</div>
-        <div class="score-label">主动指数</div>
-        <div class="score-value">{simp}</div>
-        <div class="score-bar"><div class="score-bar-fill" style="width:{simp}%"></div></div>
-        {f'<div class="score-desc">{simp_description}</div>' if simp_description else ''}
-      </div>
-      <div class="score-card loved">
-        <div class="score-mark">II.</div>
-        <div class="score-label">被爱指数</div>
-        <div class="score-value">{loved}</div>
-        <div class="score-bar"><div class="score-bar-fill" style="width:{loved}%"></div></div>
-        {f'<div class="score-desc">{love_description}</div>' if love_description else ''}
-      </div>
-      <div class="score-card cold">
-        <div class="score-mark">III.</div>
-        <div class="score-label">冷淡指数</div>
-        <div class="score-value">{cold}</div>
-        <div class="score-bar"><div class="score-bar-fill" style="width:{cold}%"></div></div>
-      </div>
+  <section class="report-overview">
+    <div>
+      <p class="report-kicker">I. 结论</p>
+      <h1 class="report-title">{relationship_type}</h1>
+      <p class="report-subtitle">{relationship_label or verdict}</p>
     </div>
+    <dl class="report-facts">
+      <div><dt>对象</dt><dd>{escape_html(contact_name)}</dd></div>
+      <div><dt>样本</dt><dd>{total_messages:,} 条消息</dd></div>
+      <div><dt>范围</dt><dd>{date_range[0]} 至 {date_range[1]}</dd></div>
+      <div><dt>密度</dt><dd>{total_days} 天 · 平均 {avg_daily:.1f} 条/天</dd></div>
+    </dl>
   </section>
 
-  <!-- 恋爱成分表 -->
   <section class="section">
-    <p class="section-label">恋爱成分表</p>
-    <div class="ingredient-list">
-      <div class="ingredient-row">
-        <span class="ingredient-name">主动投入</span>
-        <div class="ingredient-track"><div class="ingredient-fill i-simp" style="width:{simp}%"></div></div>
-        <span class="ingredient-pct">{simp}%</span>
-      </div>
-      <div class="ingredient-row">
-        <span class="ingredient-name">被爱成分</span>
-        <div class="ingredient-track"><div class="ingredient-fill i-loved" style="width:{loved}%"></div></div>
-        <span class="ingredient-pct">{loved}%</span>
-      </div>
-      <div class="ingredient-row">
-        <span class="ingredient-name">冷淡成分</span>
-        <div class="ingredient-track"><div class="ingredient-fill i-cold" style="width:{cold}%"></div></div>
-        <span class="ingredient-pct">{cold}%</span>
-      </div>
-      <div class="ingredient-row">
-        <span class="ingredient-name">失衡成分</span>
-        <div class="ingredient-track"><div class="ingredient-fill i-tool" style="width:{max(0, simp - loved - 10)}%"></div></div>
-        <span class="ingredient-pct">{max(0, simp - loved - 10)}%</span>
+    <div class="section-heading">
+      <span class="section-num">II.</span>
+      <div>
+        <h2>核心指数</h2>
+        <p class="section-intro">先看关系的基本盘：谁更主动，谁更被回应，以及互动是否出现失衡。</p>
       </div>
     </div>
-  </section>
-
-  <!-- 关键数据 -->
-  <section class="section">
-    <p class="section-label">关键数据</p>
-    <div class="stat-grid">
-      <div class="stat-card">
-        <div class="stat-meta">消息占比</div>
-        <div class="stat-main">{my_ratio}<span style="font-size:.5em;font-weight:500;color:var(--text-muted)">%</span></div>
-        <div class="stat-sub">你 · 对方 {their_ratio}%</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-meta">主动发起</div>
-        <div class="stat-main">{initiative.get('my_starts', 0)}<span style="font-size:.4em;font-weight:500;color:var(--text-muted)"> 次</span></div>
-        <div class="stat-sub">对方 {initiative.get('their_starts', 0)} 次</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-meta">你的回复速度</div>
-        <div class="stat-main" style="font-size:20px;font-weight:800">{reply.get('my_avg_human', 'N/A')}</div>
-        <div class="stat-sub">对方 {reply.get('their_avg_human', 'N/A')}</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-meta">回速差距</div>
-        <div class="stat-main">{speed_ratio}<span style="font-size:.45em;font-weight:500;color:var(--text-muted)">x</span></div>
-        <div class="stat-sub">对方比你慢这么多倍</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-meta">你的轰炸次数</div>
-        <div class="stat-main">{bombing.get('my_bomb_count', 0)}</div>
-        <div class="stat-sub">最多连发 {bombing.get('my_max_consecutive', 0)} 条</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-meta">先说晚安</div>
-        <div class="stat-main">{goodnight.get('my_goodnight', 0)}<span style="font-size:.4em;font-weight:500;color:var(--text-muted)"> 次</span></div>
-        <div class="stat-sub">对方先说 {goodnight.get('their_goodnight', 0)} 次</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-meta">你的平均字数</div>
-        <div class="stat-main">{msg_len.get('my_avg_chars', 0)}<span style="font-size:.4em;font-weight:500;color:var(--text-muted)"> 字</span></div>
-        <div class="stat-sub">对方 {msg_len.get('their_avg_chars', 0)} 字</div>
-      </div>
-      <div class="stat-card">
-        <div class="stat-meta">日均消息</div>
-        <div class="stat-main">{basic.get('avg_daily', 0)}</div>
-        <div class="stat-sub">条 / 天</div>
-      </div>
-    </div>
-  </section>
-
-  <!-- 对比分析 -->
-  <section class="section">
-    <p class="section-label">双方对比</p>
-    <div class="compare-list">
-      <div class="compare-row">
-        <div class="compare-header">
-          <span>你 · 消息量 {my_ratio}%</span>
-          <span>{their_ratio}% · 对方</span>
+    <div class="report-stack">
+      <div class="score-grid">
+        <div class="score-card simp">
+          <div class="score-mark">I.</div>
+          <div class="score-label">主动指数</div>
+          <div class="score-value">{simp}</div>
+          <div class="score-bar"><div class="score-bar-fill" style="width:{simp}%"></div></div>
+          {f'<div class="score-desc">{simp_description}</div>' if simp_description else ''}
         </div>
-        <div class="compare-track">
-          <div class="compare-you" style="width:{my_ratio}%"></div>
-          <div class="compare-them" style="width:{their_ratio}%"></div>
+        <div class="score-card loved">
+          <div class="score-mark">II.</div>
+          <div class="score-label">被爱指数</div>
+          <div class="score-value">{loved}</div>
+          <div class="score-bar"><div class="score-bar-fill" style="width:{loved}%"></div></div>
+          {f'<div class="score-desc">{love_description}</div>' if love_description else ''}
+        </div>
+        <div class="score-card cold">
+          <div class="score-mark">III.</div>
+          <div class="score-label">冷淡指数</div>
+          <div class="score-value">{cold}</div>
+          <div class="score-bar"><div class="score-bar-fill" style="width:{cold}%"></div></div>
         </div>
       </div>
-      <div class="compare-row">
-        <div class="compare-header">
-          <span>你 · 主动发起 {initiative.get('my_starts', 0)}次</span>
-          <span>{initiative.get('their_starts', 0)}次 · 对方</span>
+      <div class="ingredient-list">
+        <div class="ingredient-row">
+          <span class="ingredient-name">主动投入</span>
+          <div class="ingredient-track"><div class="ingredient-fill i-simp" style="width:{simp}%"></div></div>
+          <span class="ingredient-pct">{simp}%</span>
         </div>
-        <div class="compare-track">
-          <div class="compare-you" style="width:{int(initiative.get('my_starts',0)/(max(initiative.get('my_starts',0)+initiative.get('their_starts',0),1))*100)}%"></div>
-          <div class="compare-them" style="width:{int(initiative.get('their_starts',0)/(max(initiative.get('my_starts',0)+initiative.get('their_starts',0),1))*100)}%"></div>
+        <div class="ingredient-row">
+          <span class="ingredient-name">被爱成分</span>
+          <div class="ingredient-track"><div class="ingredient-fill i-loved" style="width:{loved}%"></div></div>
+          <span class="ingredient-pct">{loved}%</span>
+        </div>
+        <div class="ingredient-row">
+          <span class="ingredient-name">冷淡成分</span>
+          <div class="ingredient-track"><div class="ingredient-fill i-cold" style="width:{cold}%"></div></div>
+          <span class="ingredient-pct">{cold}%</span>
+        </div>
+        <div class="ingredient-row">
+          <span class="ingredient-name">失衡成分</span>
+          <div class="ingredient-track"><div class="ingredient-fill i-tool" style="width:{imbalance}%"></div></div>
+          <span class="ingredient-pct">{imbalance}%</span>
         </div>
       </div>
-      <div class="compare-row">
-        <div class="compare-header">
-          <span>你 · 先说晚安 {goodnight.get('my_goodnight', 0)}次</span>
-          <span>{goodnight.get('their_goodnight', 0)}次 · 对方</span>
+      <div class="stat-grid">
+        <div class="stat-card">
+          <div class="stat-meta">消息占比</div>
+          <div class="stat-main">{my_ratio}<span style="font-size:.5em;font-weight:500;color:var(--report-muted)">%</span></div>
+          <div class="stat-sub">你 · 对方 {their_ratio}%</div>
         </div>
-        <div class="compare-track">
-          <div class="compare-you" style="width:{int(goodnight.get('my_goodnight',0)/(max(goodnight.get('my_goodnight',0)+goodnight.get('their_goodnight',0),1))*100)}%"></div>
-          <div class="compare-them" style="width:{int(goodnight.get('their_goodnight',0)/(max(goodnight.get('my_goodnight',0)+goodnight.get('their_goodnight',0),1))*100)}%"></div>
+        <div class="stat-card">
+          <div class="stat-meta">主动发起</div>
+          <div class="stat-main">{initiative.get('my_starts', 0)}<span style="font-size:.4em;font-weight:500;color:var(--report-muted)"> 次</span></div>
+          <div class="stat-sub">对方 {initiative.get('their_starts', 0)} 次</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-meta">你的回复速度</div>
+          <div class="stat-main" style="font-size:20px;font-weight:800">{reply.get('my_avg_human', 'N/A')}</div>
+          <div class="stat-sub">对方 {reply.get('their_avg_human', 'N/A')}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-meta">回速差距</div>
+          <div class="stat-main">{speed_ratio}<span style="font-size:.45em;font-weight:500;color:var(--report-muted)">x</span></div>
+          <div class="stat-sub">对方比你慢这么多倍</div>
         </div>
       </div>
     </div>
   </section>
 
-  <!-- 趋势图表 -->
   <section class="section">
-    <p class="section-label">数据可视化</p>
-    <div class="chart-card" style="margin-bottom:12px">
-      <div class="chart-title">消息趋势（最近60天）</div>
-      <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
+    <div class="section-heading">
+      <span class="section-num">III.</span>
+      <div>
+        <h2>证据与风险</h2>
+        <p class="section-intro">把模型判断落到具体证据，先看关键发现，再看风险信号和语言模式。</p>
+      </div>
     </div>
-    <div class="charts-row">
-      <div class="chart-card">
-        <div class="chart-title">活跃时段分布</div>
-        <div class="chart-wrap"><canvas id="hourChart"></canvas></div>
+    <div class="report-stack">
+      <div class="findings-list">
+        {findings_html}
+      </div>
+      <div class="report-two-col">
+        <div class="report-card">
+          <p class="section-label">风险提示</p>
+          {danger_warnings_html}
+        </div>
+        {f'''<div class="report-card">
+          <p class="section-label">语言模式</p>
+          {lang_patterns_html}
+        </div>''' if lang_patterns_html else f'''<div class="report-card">
+          <p class="section-label">语言模式</p>
+          <p style="color:var(--report-soft);font-size:14px;line-height:1.8;">本次样本未形成足够稳定的语言模式结论。</p>
+        </div>'''}
+      </div>
+    </div>
+  </section>
+
+  <section class="section">
+    <div class="section-heading">
+      <span class="section-num">IV.</span>
+      <div>
+        <h2>互动结构</h2>
+        <p class="section-intro">这部分看聊天节奏、关系阶段和双方投入结构，判断关系是升温、僵持还是消耗。</p>
+      </div>
+    </div>
+    <div class="report-stack">
+      <div class="compare-list">
+        <div class="compare-row">
+          <div class="compare-header">
+            <span>你 · 消息量 {my_ratio}%</span>
+            <span>{their_ratio}% · 对方</span>
+          </div>
+          <div class="compare-track">
+            <div class="compare-you" style="width:{my_ratio}%"></div>
+            <div class="compare-them" style="width:{their_ratio}%"></div>
+          </div>
+        </div>
+        <div class="compare-row">
+          <div class="compare-header">
+            <span>你 · 主动发起 {initiative.get('my_starts', 0)}次</span>
+            <span>{initiative.get('their_starts', 0)}次 · 对方</span>
+          </div>
+          <div class="compare-track">
+            <div class="compare-you" style="width:{int(initiative.get('my_starts',0)/(max(initiative.get('my_starts',0)+initiative.get('their_starts',0),1))*100)}%"></div>
+            <div class="compare-them" style="width:{int(initiative.get('their_starts',0)/(max(initiative.get('my_starts',0)+initiative.get('their_starts',0),1))*100)}%"></div>
+          </div>
+        </div>
+        <div class="compare-row">
+          <div class="compare-header">
+            <span>你 · 先说晚安 {goodnight.get('my_goodnight', 0)}次</span>
+            <span>{goodnight.get('their_goodnight', 0)}次 · 对方</span>
+          </div>
+          <div class="compare-track">
+            <div class="compare-you" style="width:{int(goodnight.get('my_goodnight',0)/(max(goodnight.get('my_goodnight',0)+goodnight.get('their_goodnight',0),1))*100)}%"></div>
+            <div class="compare-them" style="width:{int(goodnight.get('their_goodnight',0)/(max(goodnight.get('my_goodnight',0)+goodnight.get('their_goodnight',0),1))*100)}%"></div>
+          </div>
+        </div>
       </div>
       <div class="chart-card">
-        <div class="chart-title">消息占比</div>
-        <div class="chart-wrap"><canvas id="pieChart"></canvas></div>
+        <div class="chart-title">消息趋势（最近60天）</div>
+        <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
       </div>
+      <div class="charts-row">
+        <div class="chart-card">
+          <div class="chart-title">活跃时段分布</div>
+          <div class="chart-wrap"><canvas id="hourChart"></canvas></div>
+        </div>
+        <div class="chart-card">
+          <div class="chart-title">消息占比</div>
+          <div class="chart-wrap"><canvas id="pieChart"></canvas></div>
+        </div>
+      </div>
+      {f'''<div class="report-card">
+        <p class="section-label">关系阶段</p>
+        {relationship_stage_html}
+      </div>''' if relationship_stage_html else ''}
+      <div class="analysis-row">
+        <div class="analysis-card">
+          <div class="analysis-card-title">爱情三角</div>
+          {sternberg_html}
+        </div>
+        <div class="analysis-card">
+          <div class="analysis-card-title">关系健康度</div>
+          {gottman_html}
+        </div>
+      </div>
+      {f'''<div class="analysis-card">
+        <div class="analysis-card-title">情感投入不对称</div>
+        {emotional_asym_html}
+      </div>''' if emotional_asym_html else ''}
     </div>
   </section>
 
-  <!-- 语言模式分析 -->
-  {f'''<section class="section">
-    <p class="section-label">语言模式分析</p>
-    {lang_patterns_html}
-  </section>''' if lang_patterns_html else ''}
-
-  <!-- ⚠️ 危险预警 -->
   <section class="section">
-    <p class="section-label">⚠️ 危险预警</p>
-    {danger_warnings_html}
-  </section>
-
-  <!-- 关系阶段 -->
-  {f'''<section class="section">
-    <p class="section-label">关系阶段定位</p>
-    {relationship_stage_html}
-  </section>''' if relationship_stage_html else ''}
-
-  <!-- 关系分析：Sternberg + Gottman + 情感不对称 -->
-  <section class="section">
-    <p class="section-label">关系诊断</p>
-    <div class="analysis-row">
-      <div class="analysis-card">
-        <div class="analysis-card-title">爱情三角</div>
-        {sternberg_html}
-      </div>
-      <div class="analysis-card">
-        <div class="analysis-card-title">关系健康度</div>
-        {gottman_html}
+    <div class="section-heading">
+      <span class="section-num">V.</span>
+      <div>
+        <h2>行动建议</h2>
+        <p class="section-intro">最后回到可执行选择：怎么停、怎么进、什么时候撤，以及双方人格结构的约束。</p>
       </div>
     </div>
-    {f'''<div class="analysis-card" style="margin-top:12px">
-      <div class="analysis-card-title">情感投入不对称</div>
-      {emotional_asym_html}
-    </div>''' if emotional_asym_html else ''}
-  </section>
-
-  <!-- 人格分析 -->
-  <section class="section">
-    <p class="section-label">人格与依恋分析</p>
-    {personality_html}
-  </section>
-
-  <!-- 人格深度画像 -->
-  {f'''<section class="section">
-    <p class="section-label">人格深度画像 🧬</p>
-    {portrait_html}
-  </section>''' if portrait_html else ''}
-
-  <!-- 军师建议 -->
-  <section class="section">
-    <p class="section-label">🎯 军师建议</p>
-    {strategist_html}
-  </section>
-
-  <!-- 鉴定发现 -->
-  <section class="section">
-    <p class="section-label">鉴定发现</p>
-    <div class="findings-list">
-      {findings_html}
+    <div class="report-stack">
+      <div class="verdict-card">
+        <div class="verdict-meta-row">
+          <span class="verdict-type-badge">TA回我了 · 深度分析报告</span>
+          {f'<span class="verdict-trend-badge">{trend_icon} {relationship_trend}</span>' if relationship_trend else ''}
+        </div>
+        <div class="verdict-type">{relationship_type}</div>
+        <div class="verdict-label">{relationship_label}</div>
+        <div class="verdict-divider"></div>
+        <div class="verdict-text">{verdict}</div>
+      </div>
+      <div class="report-card">
+        <p class="section-label">军师建议</p>
+        {strategist_html}
+      </div>
+      <div class="report-card">
+        <p class="section-label">人格与依恋</p>
+        {personality_html}
+      </div>
+      {f'''<div class="report-card">
+        <p class="section-label">人格深度画像</p>
+        {portrait_html}
+      </div>''' if portrait_html else ''}
     </div>
   </section>
 
-  <!-- 最终鉴定 -->
-  <section class="section">
-    <p class="section-label">最终鉴定</p>
-    <div class="verdict-card">
-      <div class="verdict-meta-row">
-        <span class="verdict-type-badge">TA回我了 · 深度分析报告</span>
-        {f'<span class="verdict-trend-badge">{trend_icon} {relationship_trend}</span>' if relationship_trend else ''}
-      </div>
-      <div class="verdict-type">{relationship_type}</div>
-      <div class="verdict-label">{relationship_label}</div>
-      <div class="verdict-divider"></div>
-      <div class="verdict-text">{verdict}</div>
-    </div>
-  </section>
+  <p class="report-note">仅供参考 · 数据本地处理，不上传任何服务器 · TA回我了 · {date_str}</p>
 
 </main>
 
-<footer class="footer">
-  <p style="margin:0 0 14px;font-size:14px;line-height:1.9;color:var(--text-muted);max-width:620px;margin-left:auto;margin-right:auto;font-style:italic;opacity:.85;">
-    你愿意走到这里，本身就已经说明了一切。<br>
-    能为一段感情认真复盘、鼓起勇气直视现实的人，从来不缺被爱的资格。<br>
-    算法能还原对话的节奏，却读不懂你在屏幕前的那一声心跳。<br>
-    这份报告是一面镜子——照见的是数据，照不见的，才是真正的你们。<br><br>
-    放下这份冰冷的报告，去现实里，用真心换真心。<br>
-    爱情从来不需要算法背书，它只需要你，开口。
-  </p>
-  仅供参考 · 数据本地处理，不上传任何服务器 · TA回我了 · {date_str}
-</footer>
-
 <script>
 const d = {chart_data_js};
+const reportRoot = document.querySelector('.report-shell') || document.body;
+const reportStyle = getComputedStyle(reportRoot);
+const accent = reportStyle.getPropertyValue('--report-accent').trim() || '#6f6251';
+const accentStrong = reportStyle.getPropertyValue('--report-accent-strong').trim() || '#2c2924';
+const muted = reportStyle.getPropertyValue('--report-muted').trim() || '#8a8075';
+const line = reportStyle.getPropertyValue('--report-line').trim() || 'rgba(47,42,35,.18)';
+const panel = reportStyle.getPropertyValue('--report-panel-strong').trim() || '#fffdf8';
+const ink = reportStyle.getPropertyValue('--report-ink').trim() || '#211f1c';
 const base = {{
   responsive: true,
   maintainAspectRatio: false,
   plugins: {{
     legend: {{ display: false }},
     tooltip: {{
-      backgroundColor: '#18181f',
-      borderColor: 'rgba(255,255,255,0.06)',
+      backgroundColor: panel,
+      borderColor: line,
       borderWidth: 1,
-      titleColor: '#f0f0f5',
-      bodyColor: '#6b6b80',
+      titleColor: ink,
+      bodyColor: muted,
       padding: 12,
     }}
   }}
@@ -2121,8 +2454,8 @@ new Chart(document.getElementById('trendChart'), {{
     labels: d.trend_labels,
     datasets: [{{
       data: d.trend_data,
-      borderColor: '#a855f7',
-      backgroundColor: 'rgba(168,85,247,.08)',
+      borderColor: accent,
+      backgroundColor: 'rgba(111,98,81,.10)',
       fill: true,
       tension: 0.4,
       pointRadius: 0,
@@ -2132,8 +2465,8 @@ new Chart(document.getElementById('trendChart'), {{
   options: {{
     ...base,
     scales: {{
-      x: {{ ticks: {{ color: '#3a3a4a', maxTicksLimit: 8, font: {{ size: 11 }} }}, grid: {{ color: 'rgba(255,255,255,0.03)' }}, border: {{ display: false }} }},
-      y: {{ ticks: {{ color: '#3a3a4a', font: {{ size: 11 }} }}, grid: {{ color: 'rgba(255,255,255,0.03)' }}, border: {{ display: false }} }}
+      x: {{ ticks: {{ color: muted, maxTicksLimit: 8, font: {{ size: 11 }} }}, grid: {{ color: line }}, border: {{ display: false }} }},
+      y: {{ ticks: {{ color: muted, font: {{ size: 11 }} }}, grid: {{ color: line }}, border: {{ display: false }} }}
     }}
   }}
 }});
@@ -2144,8 +2477,8 @@ new Chart(document.getElementById('hourChart'), {{
     labels: d.hour_labels,
     datasets: [{{
       data: d.hour_data,
-      backgroundColor: 'rgba(168,85,247,.5)',
-      borderColor: 'rgba(168,85,247,.8)',
+      backgroundColor: accent,
+      borderColor: accentStrong,
       borderWidth: 1,
       borderRadius: 3,
     }}]
@@ -2153,8 +2486,8 @@ new Chart(document.getElementById('hourChart'), {{
   options: {{
     ...base,
     scales: {{
-      x: {{ ticks: {{ color: '#3a3a4a', font: {{ size: 10 }}, maxTicksLimit: 8 }}, grid: {{ display: false }}, border: {{ display: false }} }},
-      y: {{ ticks: {{ color: '#3a3a4a', font: {{ size: 10 }} }}, grid: {{ color: 'rgba(255,255,255,0.03)' }}, border: {{ display: false }} }}
+      x: {{ ticks: {{ color: muted, font: {{ size: 10 }}, maxTicksLimit: 8 }}, grid: {{ display: false }}, border: {{ display: false }} }},
+      y: {{ ticks: {{ color: muted, font: {{ size: 10 }} }}, grid: {{ color: line }}, border: {{ display: false }} }}
     }}
   }}
 }});
@@ -2165,8 +2498,8 @@ new Chart(document.getElementById('pieChart'), {{
     labels: ['你', '{escape_html(contact_name)}'],
     datasets: [{{
       data: d.pie_data,
-      backgroundColor: ['rgba(245,158,11,.8)', 'rgba(168,85,247,.8)'],
-      borderColor: ['#f59e0b', '#a855f7'],
+      backgroundColor: [accentStrong, accent],
+      borderColor: [accentStrong, accent],
       borderWidth: 2,
     }}]
   }},
@@ -2177,7 +2510,7 @@ new Chart(document.getElementById('pieChart'), {{
       legend: {{
         display: true,
         position: 'bottom',
-        labels: {{ color: '#6b6b80', font: {{ size: 11 }}, padding: 16, boxWidth: 10 }}
+        labels: {{ color: muted, font: {{ size: 11 }}, padding: 16, boxWidth: 10 }}
       }}
     }},
     cutout: '65%'

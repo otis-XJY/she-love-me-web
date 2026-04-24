@@ -503,7 +503,11 @@ select:focus {
 }
 
 .report-panel {
-  margin-top: 18px;
+  margin-top: 24px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .report-head {
@@ -541,8 +545,14 @@ select:focus {
   display: none;
 }
 
+.report-stage.has-report {
+  border: 0;
+  background: transparent;
+  overflow: visible;
+}
+
 #reportMount {
-  min-height: 520px;
+  min-height: 0;
 }
 
 .section-head {

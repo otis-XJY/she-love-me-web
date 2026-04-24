@@ -594,57 +594,263 @@ def render_language_patterns(lang_patterns, linguistic_stats, contact_name):
 
 
 def render_html(stats, analysis, contact_name):
-    scores    = stats.get("scores", {})
-    simp      = scores.get("simp_index", 0)
-    loved     = scores.get("loved_index", 0)
-    cold      = scores.get("cold_index", 0)
-    basic     = stats.get("basic", {})
+    scores = stats.get("scores", {})
+    basic = stats.get("basic", {})
     initiative = stats.get("initiative", {})
-    reply     = stats.get("reply_speed", {})
-    bombing   = stats.get("bombing", {})
+    reply = stats.get("reply_speed", {})
+    bombing = stats.get("bombing", {})
     goodnight = stats.get("goodnight", {})
-    msg_len   = stats.get("message_length", {})
-    linguistic_stats = stats.get("linguistic", {})
+    msg_len = stats.get("message_length", {})
 
-    relationship_type  = escape_html(analysis.get("relationship_type", "未知"))
-    relationship_label = escape_html(analysis.get("relationship_label", ""))
-    relationship_trend = escape_html(analysis.get("relationship_trend", ""))
-    verdict            = escape_html(analysis.get("verdict", ""))
-    simp_description   = escape_html(analysis.get("simp_description", ""))
-    love_description   = escape_html(analysis.get("love_description", ""))
+    def value_or(value, default=0):
+        return default if value is None else value
 
-    danger_warnings_html   = render_danger_warnings(analysis.get("danger_warnings", []))
-    sternberg_html         = render_sternberg(analysis.get("sternberg", {}))
-    gottman_html           = render_gottman(analysis.get("gottman", {}))
-    personality_html       = render_personality(analysis.get("personality", {}), contact_name)
-    strategist_html        = render_strategist(analysis.get("strategist", {}))
-    findings_html          = render_key_findings(analysis.get("key_findings", []))
-    relationship_stage_html = render_relationship_stage(analysis.get("relationship_stage"))
-    emotional_asym_html    = render_emotional_asymmetry(analysis.get("emotional_asymmetry"))
-    portrait_html          = render_personality_portrait(analysis.get("personality_portrait"), contact_name)
-    lang_patterns_html     = render_language_patterns(
-        analysis.get("language_patterns"), linguistic_stats, contact_name
-    )
+    def pct(value):
+        try:
+            return max(0, min(100, int(value)))
+        except Exception:
+            return 0
 
-    chart = build_chart_data(stats)
-    chart_data_js = json.dumps(chart, ensure_ascii=False)
-    date_str = datetime.now().strftime("%Y.%m.%d")
+    def text(value, fallback="未判断"):
+        value = fallback if value in (None, "") else value
+        return escape_html(value)
 
+    def plain_list(items, empty="暂无明确结论"):
+        if not items:
+            return f'<p class="ta-empty">{escape_html(empty)}</p>'
+        return "".join(f'<span class="ta-chip">{escape_html(item)}</span>' for item in items)
+
+    def render_findings(items):
+        if not items:
+            return '<p class="ta-empty">暂无鉴定发现。</p>'
+        blocks = []
+        for index, item in enumerate(items[:6], 1):
+            if isinstance(item, dict):
+                title = text(item.get("title", f"发现 {index}"))
+                quote = text(item.get("quote", ""), "")
+                analysis_text = text(item.get("analysis", ""), "")
+            else:
+                title = f"发现 {index}"
+                quote = ""
+                analysis_text = text(item)
+            blocks.append(f'''
+        <div class="ta-evidence-item">
+          <b>{index:02d}</b>
+          <div>
+            <h4>{title}</h4>
+            {f'<blockquote>{quote}</blockquote>' if quote else ''}
+            <p>{analysis_text}</p>
+          </div>
+        </div>''')
+        return "".join(blocks)
+
+    def render_warnings(items):
+        if not items:
+            return '<p class="ta-empty">本次没有明显风险信号。</p>'
+        blocks = []
+        for item in items[:5]:
+            level = text(item.get("level", "中危"))
+            wtype = text(item.get("type", "风险信号"))
+            evidence = text(item.get("evidence", ""), "")
+            blocks.append(f'''
+        <div class="ta-warning">
+          <div><strong>{wtype}</strong><span>{level}</span></div>
+          {f'<p>{evidence}</p>' if evidence else ''}
+        </div>''')
+        return "".join(blocks)
+
+    def render_stage(stage):
+        if not stage:
+            return '<p class="ta-empty">暂无关系阶段判断。</p>'
+        title = text(stage.get("stage", "未定位"))
+        desc = text(stage.get("stage_description", ""), "")
+        risk = text(stage.get("stage_risk", ""), "")
+        path_text = text(stage.get("advancement_path", ""), "")
+        situ = bool(stage.get("is_situationship"))
+        situ_ev = text(stage.get("situationship_evidence", ""), "")
+        status_line = f"实名化前夜：{situ_ev}" if situ else "未检测到明显悬空关系标记。"
+        return f'''
+        <div class="ta-stage-card">
+          <div class="ta-stage-main"><span>当前阶段</span><strong>{title}</strong></div>
+          {f'<p>{desc}</p>' if desc else ''}
+          <p><b>关系状态</b>{status_line}</p>
+          {f'<p><b>当前风险</b>{risk}</p>' if risk else ''}
+          {f'<p><b>推进方向</b>{path_text}</p>' if path_text else ''}
+        </div>'''
+
+    def render_love_model(sternberg, gottman):
+        passion = pct(sternberg.get("passion", 0))
+        intimacy = pct(sternberg.get("intimacy", 0))
+        commitment = pct(sternberg.get("commitment", 0))
+        love_type = text(sternberg.get("love_type", "未判断"))
+        ratio = value_or(gottman.get("positive_negative_ratio", 0), 0)
+        risk = text(gottman.get("risk_level", "未判断"))
+        horsemen = gottman.get("horsemen_detected", []) or []
+        repair = gottman.get("repair_attempts", {}) or {}
+        repair_parts = [repair.get("method"), repair.get("partner_response"), repair.get("success_rate")]
+        repair_text = "；".join(text(part, "") for part in repair_parts if part)
+        bars = [("激情", passion), ("亲密", intimacy), ("承诺", commitment)]
+        bars_html = "".join(f'''
+          <div class="ta-model-row"><span>{label}</span><i><em style="width:{val}%"></em></i><b>{val}</b></div>''' for label, val in bars)
+        return f'''
+        <div class="ta-panel ta-model-panel">
+          <h3>爱情三角</h3>
+          {bars_html}
+          <p class="ta-model-note">类型判断：{love_type}</p>
+        </div>
+        <div class="ta-panel ta-model-panel">
+          <h3>关系健康度</h3>
+          <div class="ta-ratio"><strong>{ratio}</strong><span>正负互动比</span></div>
+          <p class="ta-model-note">风险级别：{risk}</p>
+          <div class="ta-chip-row">{plain_list(horsemen, "未检测到四骑士信号")}</div>
+          {f'<p class="ta-model-note">修复线索：{repair_text}</p>' if repair_text else ''}
+        </div>'''
+
+    def render_personality_block(personality, portrait):
+        rows = [
+            ("依恋类型", personality.get("user_attachment"), personality.get("partner_attachment")),
+            ("沟通风格", personality.get("user_communication"), personality.get("partner_communication")),
+            ("爱的语言", personality.get("user_love_language"), personality.get("partner_love_language")),
+        ]
+        row_html = "".join(f'''
+          <div class="ta-person-row"><span>{label}</span><b>{text(me)}</b><b>{text(them)}</b></div>''' for label, me, them in rows)
+        user = portrait.get("user", {}) if isinstance(portrait, dict) else {}
+        partner = portrait.get("partner", {}) if isinstance(portrait, dict) else {}
+        return f'''
+        <div class="ta-panel">
+          <h3>人格与依恋</h3>
+          <div class="ta-person-head"><span></span><b>你</b><b>{escape_html(contact_name)}</b></div>
+          {row_html}
+        </div>
+        <div class="ta-panel">
+          <h3>人格画像</h3>
+          <div class="ta-portrait-grid">
+            <div><span>你的核心需求</span><p>{text(user.get("core_needs", "暂无"))}</p><div>{plain_list(user.get("core_traits", []), "暂无特征")}</div></div>
+            <div><span>对方核心需求</span><p>{text(partner.get("core_needs", "暂无"))}</p><div>{plain_list(partner.get("core_traits", []), "暂无特征")}</div></div>
+          </div>
+        </div>'''
+
+    def render_strategy(strategy):
+        if not strategy:
+            return '<p class="ta-empty">暂无行动建议。</p>'
+        stop_items = strategy.get("stop_doing", []) or []
+        start_items = strategy.get("start_doing", []) or []
+        walkaway = strategy.get("walkaway_point", {}) or {}
+
+        def action_list(items, label):
+            if not items:
+                return '<p class="ta-empty">暂无。</p>'
+            html = []
+            for item in items[:5]:
+                if isinstance(item, dict):
+                    action = text(item.get("action", ""), "")
+                    reason = text(item.get("reason", ""), "")
+                    timing = text(item.get("timing", ""), "")
+                    script = text(item.get("script", ""), "")
+                    quote = text(item.get("quote", ""), "")
+                    details = "".join([
+                        f'<p>{reason}</p>' if reason else '',
+                        f'<p>时机：{timing}</p>' if timing else '',
+                        f'<p>参考话术：{script}</p>' if script else '',
+                        f'<p>参考原话：{quote}</p>' if quote else '',
+                    ])
+                    html.append(f'<li><b>{label}</b><span>{action}</span>{details}</li>')
+                else:
+                    html.append(f'<li><b>{label}</b><span>{text(item)}</span></li>')
+            return "".join(html)
+
+        walkaway_html = ""
+        if walkaway:
+            walkaway_html = f'''
+          <div class="ta-stopline">
+            <b>止损红线</b>
+            <p>{text(walkaway.get("timeframe", ""), "")}</p>
+            <p>{text(walkaway.get("trigger", ""), "")}</p>
+            <p>{text(walkaway.get("reason", ""), "")}</p>
+          </div>'''
+        return f'''
+        <div class="ta-panel ta-action-panel">
+          <h3>核心问题</h3>
+          <p>{text(strategy.get("core_problem", ""), "暂无")}</p>
+        </div>
+        <div class="ta-action-grid">
+          <div class="ta-panel"><h3>立即停止</h3><ul class="ta-action-list">{action_list(stop_items, "停止")}</ul></div>
+          <div class="ta-panel"><h3>立即开始</h3><ul class="ta-action-list">{action_list(start_items, "开始")}</ul></div>
+        </div>
+        <div class="ta-panel ta-action-panel">
+          <h3>推进路线</h3>
+          <p>{text(strategy.get("roadmap", ""), "暂无")}</p>
+          {walkaway_html}
+        </div>'''
+
+    def render_language(patterns):
+        if not patterns:
+            return '<p class="ta-empty">暂无语言模式结论。</p>'
+        items = [
+            ("我们感", patterns.get("pronoun_we_ratio")),
+            ("模糊表达", patterns.get("hedging_density")),
+            ("未来指向", patterns.get("future_orientation")),
+            ("条件表达", patterns.get("conditional_density")),
+            ("情绪正负", patterns.get("emotional_valence_ratio")),
+        ]
+        cards = "".join(f'<div class="ta-language-card"><span>{label}</span><p>{text(val)}</p></div>' for label, val in items)
+        finding = text(patterns.get("key_linguistic_finding", ""), "")
+        return f'<div class="ta-language-grid">{cards}</div>{f"<p class=\"ta-language-note\">{finding}</p>" if finding else ""}'
+
+    simp = pct(scores.get("simp_index", 0))
+    loved = pct(scores.get("loved_index", 0))
+    cold = pct(scores.get("cold_index", 0))
+    imbalance = pct(max(0, simp - loved - 10))
+    relationship_type = text(analysis.get("relationship_type", "未知"))
+    relationship_label = text(analysis.get("relationship_label", ""), "")
+    relationship_trend = text(analysis.get("relationship_trend", ""), "")
+    verdict = text(analysis.get("verdict", ""), "")
+    simp_description = text(analysis.get("simp_description", ""), "")
+    love_description = text(analysis.get("love_description", ""), "")
     date_range = basic.get("date_range", ["?", "?"])
-    total_days = basic.get("total_days", 1)
-    total_messages = basic.get("total_messages", 0)
-    avg_daily = basic.get("avg_daily", 0)
-    my_ratio   = int(basic.get("my_ratio", 0) * 100)
-    their_ratio = int(basic.get("their_ratio", 0) * 100)
-    speed_ratio = reply.get("speed_ratio", 1)
-    imbalance = max(0, simp - loved - 10)
-
-    trend_icon = {"升温中": "升", "平稳维持": "稳", "逐渐降温": "降", "已经凉透": "冷"}.get(
-        analysis.get("relationship_trend", ""), "势"
-    )
+    if not isinstance(date_range, list) or len(date_range) < 2:
+        date_range = ["?", "?"]
+    total_days = value_or(basic.get("total_days", 1), 1)
+    total_messages = value_or(basic.get("total_messages", 0), 0)
+    avg_daily = value_or(basic.get("avg_daily", 0), 0)
+    my_ratio = pct(float(basic.get("my_ratio", 0)) * 100)
+    their_ratio = pct(float(basic.get("their_ratio", 0)) * 100)
+    speed_ratio = value_or(reply.get("speed_ratio", 1), 1)
+    chart_data_js = json.dumps(build_chart_data(stats), ensure_ascii=False)
+    date_str = datetime.now().strftime("%Y.%m.%d")
     report_tone = classify_report_tone(analysis, stats)
 
-    return f"""<!DOCTYPE html>
+    metrics = [
+        ("消息占比", f"{my_ratio}%", f"你 · 对方 {their_ratio}%"),
+        ("主动发起", f"{initiative.get('my_starts', 0)} 次", f"对方 {initiative.get('their_starts', 0)} 次"),
+        ("你的回复速度", text(reply.get("my_avg_human", "未计算")), f"对方 {text(reply.get('their_avg_human', '未计算'))}"),
+        ("回速差距", f"{speed_ratio}x", "对方比你慢这么多倍"),
+        ("连续发送", f"{bombing.get('my_bomb_count', 0)} 次", f"最多连发 {bombing.get('my_max_consecutive', 0)} 条"),
+        ("先说晚安", f"{goodnight.get('my_goodnight', 0)} 次", f"对方 {goodnight.get('their_goodnight', 0)} 次"),
+        ("平均字数", f"{msg_len.get('my_avg_chars', 0)} 字", f"对方 {msg_len.get('their_avg_chars', 0)} 字"),
+        ("日均消息", f"{avg_daily}", "条 / 天"),
+    ]
+    metric_cards = "".join(f'<div class="ta-stat"><span>{label}</span><strong>{main}</strong><p>{sub}</p></div>' for label, main, sub in metrics)
+    score_cards = "".join([
+        f'<div class="ta-score"><i>I.</i><span>主动指数</span><strong>{simp}</strong><em><b style="width:{simp}%"></b></em>{f"<p>{simp_description}</p>" if simp_description else ""}</div>',
+        f'<div class="ta-score"><i>II.</i><span>被爱指数</span><strong>{loved}</strong><em><b style="width:{loved}%"></b></em>{f"<p>{love_description}</p>" if love_description else ""}</div>',
+        f'<div class="ta-score"><i>III.</i><span>冷淡指数</span><strong>{cold}</strong><em><b style="width:{cold}%"></b></em></div>',
+    ])
+    ingredient_rows = "".join([
+        f'<div><span>主动投入</span><i><b style="width:{simp}%"></b></i><strong>{simp}%</strong></div>',
+        f'<div><span>被爱成分</span><i><b style="width:{loved}%"></b></i><strong>{loved}%</strong></div>',
+        f'<div><span>冷淡成分</span><i><b style="width:{cold}%"></b></i><strong>{cold}%</strong></div>',
+        f'<div><span>失衡成分</span><i><b style="width:{imbalance}%"></b></i><strong>{imbalance}%</strong></div>',
+    ])
+    total_starts = max(initiative.get("my_starts", 0) + initiative.get("their_starts", 0), 1)
+    total_goodnight = max(goodnight.get("my_goodnight", 0) + goodnight.get("their_goodnight", 0), 1)
+    compare_rows = "".join([
+        f'<div class="ta-compare"><p><span>你 · 消息量 {my_ratio}%</span><span>{their_ratio}% · 对方</span></p><i><b style="width:{my_ratio}%"></b><em style="width:{their_ratio}%"></em></i></div>',
+        f'<div class="ta-compare"><p><span>你 · 主动发起 {initiative.get("my_starts", 0)} 次</span><span>{initiative.get("their_starts", 0)} 次 · 对方</span></p><i><b style="width:{int(initiative.get("my_starts", 0) / total_starts * 100)}%"></b><em style="width:{int(initiative.get("their_starts", 0) / total_starts * 100)}%"></em></i></div>',
+        f'<div class="ta-compare"><p><span>你 · 先说晚安 {goodnight.get("my_goodnight", 0)} 次</span><span>{goodnight.get("their_goodnight", 0)} 次 · 对方</span></p><i><b style="width:{int(goodnight.get("my_goodnight", 0) / total_goodnight * 100)}%"></b><em style="width:{int(goodnight.get("their_goodnight", 0) / total_goodnight * 100)}%"></em></i></div>',
+    ])
+
+    return f'''<!DOCTYPE html>
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8">
@@ -652,1874 +858,182 @@ def render_html(stats, analysis, contact_name):
 <title>TA回我了 · {escape_html(contact_name)}</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 <style>
-  :root {{
-    --bg: #0e0e0e;
-    --surface: rgba(28,27,27,.94);
-    --surface-2: rgba(42,42,42,.86);
-    --border: rgba(215,25,32,0.26);
-    --border-hover: rgba(215,25,32,0.48);
-    --text: #e5e2e1;
-    --text-muted: #e6bdb8;
-    --text-subtle: #8d7b78;
-    --accent-1: #d71920;
-    --accent-2: #ffb4ab;
-    --accent-3: #ad8884;
-    --accent-warm: #f59e0b;
-    --grad-love: linear-gradient(135deg, #ffb4ab, #d71920);
-    --grad-simp: linear-gradient(135deg, #f59e0b, #d71920);
-    --grad-cold: linear-gradient(135deg, #5d3f3c, #ad8884);
-    --radius: 4px;
-    --radius-sm: 4px;
-  }}
-
-  * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-
-  body {{
-    font-family: 'Be Vietnam Pro', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, sans-serif;
-    background:
-      radial-gradient(circle at 50% 0%, rgba(215,25,32,.18), transparent 38rem),
-      linear-gradient(180deg, #0e0e0e 0%, #131313 46%, #090909 100%);
-    color: var(--text);
-    min-height: 100vh;
-    -webkit-font-smoothing: antialiased;
-  }}
-
-  /* ── Hero ── */
-  .hero {{
-    position: relative;
-    overflow: hidden;
-    padding: 80px 24px 64px;
-    text-align: center;
-    border-bottom: 1px solid var(--border);
-  }}
-  .hero::before {{
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(ellipse 60% 50% at 30% 0%, rgba(215,25,32,.22) 0%, transparent 70%),
-      radial-gradient(ellipse 60% 50% at 70% 0%, rgba(255,180,171,.12) 0%, transparent 70%);
-    pointer-events: none;
-  }}
-  .hero-eyebrow {{
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: .15em;
-    text-transform: uppercase;
-    color: var(--text-muted);
-    margin-bottom: 20px;
-  }}
-  .hero-title {{
-    font-family: 'Newsreader', serif;
-    font-size: clamp(48px, 10vw, 96px);
-    font-weight: 900;
-    line-height: 1;
-    letter-spacing: -.03em;
-    background: var(--grad-love);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: 16px;
-  }}
-  .hero-contact {{
-    font-size: 20px;
-    font-weight: 500;
-    color: var(--text-muted);
-    margin-bottom: 8px;
-  }}
-  .hero-contact span {{ color: var(--text); font-weight: 700; }}
-  .hero-date {{ font-size: 13px; color: var(--text-subtle); }}
-
-  /* ── Layout ── */
-  .container {{ max-width: 960px; margin: 0 auto; padding: 48px 24px 80px; }}
-  .section {{ margin-bottom: 64px; }}
-  .section-label {{
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: .12em;
-    text-transform: uppercase;
-    color: var(--text-subtle);
-    margin-bottom: 20px;
-  }}
-
-  /* ── Score Hero Cards ── */
-  .score-grid {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }}
-  .score-card {{
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 28px 20px;
-    text-align: center;
-    position: relative;
-    overflow: hidden;
-    transition: border-color .2s;
-  }}
-  .score-card:hover {{ border-color: var(--border-hover); }}
-  .score-card::before {{
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 2px;
-  }}
-  .score-card.simp::before {{ background: var(--grad-simp); }}
-  .score-card.loved::before {{ background: var(--grad-love); }}
-  .score-card.cold::before {{ background: var(--grad-cold); }}
-  .score-emoji {{ font-size: 24px; margin-bottom: 12px; }}
-  .score-mark {{
-    font-family: Georgia, "Times New Roman", serif;
-    color: var(--brand);
-    font-size: 26px;
-    font-style: italic;
-    font-weight: 700;
-    line-height: 1;
-    margin-bottom: 18px;
-  }}
-  .score-label {{ font-size: 11px; font-weight: 600; color: var(--text-muted); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; }}
-  .score-value {{ font-size: 56px; font-weight: 900; line-height: 1; letter-spacing: -.04em; }}
-  .score-card.simp .score-value {{ background: var(--grad-simp); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }}
-  .score-card.loved .score-value {{ background: var(--grad-love); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }}
-  .score-card.cold .score-value {{ background: var(--grad-cold); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; }}
-  .score-bar {{
-    margin-top: 16px;
-    height: 3px;
-    background: var(--surface-2);
-    border-radius: 99px;
-    overflow: hidden;
-  }}
-  .score-bar-fill {{ height: 100%; border-radius: 99px; }}
-  .score-card.simp .score-bar-fill {{ background: var(--grad-simp); }}
-  .score-card.loved .score-bar-fill {{ background: var(--grad-love); }}
-  .score-card.cold .score-bar-fill {{ background: var(--grad-cold); }}
-
-  /* ── 成分表 ── */
-  .ingredient-list {{ display: flex; flex-direction: column; gap: 14px; }}
-  .ingredient-row {{
-    display: grid;
-    grid-template-columns: 110px 1fr 52px;
-    align-items: center;
-    gap: 14px;
-  }}
-  .ingredient-name {{ font-size: 13px; font-weight: 500; color: var(--text-muted); }}
-  .ingredient-track {{
-    height: 6px;
-    background: var(--surface-2);
-    border-radius: 99px;
-    overflow: hidden;
-  }}
-  .ingredient-fill {{ height: 100%; border-radius: 99px; }}
-  .i-simp {{ background: var(--grad-simp); }}
-  .i-loved {{ background: var(--grad-love); }}
-  .i-cold {{ background: var(--grad-cold); }}
-  .i-tool {{ background: linear-gradient(90deg, #374151, #6b7280); }}
-  .ingredient-pct {{ font-size: 14px; font-weight: 700; text-align: right; }}
-
-  /* ── Stat Grid ── */
-  .stat-grid {{ display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }}
-  @media(min-width:640px) {{ .stat-grid {{ grid-template-columns: repeat(4, 1fr); }} }}
-  .stat-card {{
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 20px 16px;
-    transition: border-color .2s;
-  }}
-  .stat-card:hover {{ border-color: var(--border-hover); }}
-  .stat-meta {{ font-size: 11px; font-weight: 500; color: var(--text-subtle); letter-spacing: .05em; text-transform: uppercase; margin-bottom: 10px; }}
-  .stat-main {{ font-size: 28px; font-weight: 800; letter-spacing: -.02em; line-height: 1; }}
-  .stat-sub {{ font-size: 11px; color: var(--text-muted); margin-top: 6px; line-height: 1.5; }}
-
-  /* ── Compare Bars ── */
-  .compare-list {{ display: flex; flex-direction: column; gap: 20px; }}
-  .compare-row {{ }}
-  .compare-header {{
-    display: flex;
-    justify-content: space-between;
-    font-size: 12px;
-    font-weight: 600;
-    color: var(--text-muted);
-    margin-bottom: 8px;
-  }}
-  .compare-track {{
-    position: relative;
-    height: 8px;
-    background: var(--surface-2);
-    border-radius: 99px;
-    overflow: hidden;
-  }}
-  .compare-you {{
-    position: absolute;
-    left: 0; top: 0; bottom: 0;
-    border-radius: 99px;
-    background: var(--grad-simp);
-  }}
-  .compare-them {{
-    position: absolute;
-    right: 0; top: 0; bottom: 0;
-    border-radius: 99px;
-    background: var(--grad-love);
-  }}
-
-  /* ── Danger Warnings ── */
-  .warning-card {{
-    border: 1px solid;
-    border-radius: var(--radius-sm);
-    padding: 18px 20px;
-    margin-bottom: 12px;
-  }}
-  .warning-header {{
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    margin-bottom: 10px;
-  }}
-  .warning-type {{
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--text);
-  }}
-  .warning-badge {{
-    font-size: 11px;
-    font-weight: 700;
-    border: 1px solid;
-    border-radius: 99px;
-    padding: 3px 10px;
-    letter-spacing: .06em;
-  }}
-  .warning-evidence {{
-    font-size: 13px;
-    line-height: 1.7;
-    color: var(--text-muted);
-  }}
-
-  /* ── Sternberg ── */
-  .sternberg-wrap {{ display: flex; flex-direction: column; gap: 16px; }}
-  .sternberg-row {{
-    display: grid;
-    grid-template-columns: 130px 1fr 40px;
-    align-items: center;
-    gap: 14px;
-  }}
-  .sternberg-label {{ font-size: 12px; font-weight: 600; color: var(--text-muted); }}
-  .sternberg-track {{
-    height: 8px;
-    background: var(--surface-2);
-    border-radius: 99px;
-    overflow: hidden;
-  }}
-  .sternberg-fill {{ height: 100%; border-radius: 99px; }}
-  .s-passion    {{ background: linear-gradient(90deg, #ec4899, #f97316); }}
-  .s-intimacy   {{ background: linear-gradient(90deg, #a855f7, #3b82f6); }}
-  .s-commitment {{ background: linear-gradient(90deg, #22c55e, #06b6d4); }}
-  .sternberg-val {{ font-size: 14px; font-weight: 700; text-align: right; color: var(--text-muted); }}
-  .sternberg-type {{
-    margin-top: 8px;
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--accent-1);
-    padding: 10px 16px;
-    background: rgba(168,85,247,.08);
-    border: 1px solid rgba(168,85,247,.15);
-    border-radius: var(--radius-sm);
-  }}
-
-  /* ── Gottman ── */
-  .gottman-wrap {{ display: flex; flex-direction: column; gap: 14px; }}
-  .gottman-ratio-row {{
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }}
-  .gottman-ratio-val {{
-    font-size: 40px;
-    font-weight: 900;
-    letter-spacing: -.03em;
-    color: var(--text);
-  }}
-  .gottman-ratio-label {{ font-size: 11px; color: var(--text-muted); margin-top: 4px; }}
-  .gottman-risk-badge {{
-    font-size: 12px;
-    font-weight: 700;
-    border: 1px solid;
-    border-radius: 99px;
-    padding: 6px 14px;
-    letter-spacing: .06em;
-  }}
-  .gottman-bar-track {{
-    height: 6px;
-    background: var(--surface-2);
-    border-radius: 99px;
-    overflow: hidden;
-  }}
-  .gottman-bar-fill {{ height: 100%; border-radius: 99px; }}
-  .gottman-horsemen-label {{ font-size: 11px; font-weight: 600; color: var(--text-subtle); letter-spacing: .08em; text-transform: uppercase; margin-top: 4px; }}
-  .gottman-horsemen {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 4px; }}
-  .horseman-chip {{
-    font-size: 12px;
-    font-weight: 600;
-    color: #ef4444;
-    background: rgba(239,68,68,.1);
-    border: 1px solid rgba(239,68,68,.2);
-    border-radius: 99px;
-    padding: 4px 12px;
-  }}
-
-  /* ── Personality Table ── */
-  .personality-table {{
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    overflow: hidden;
-    margin-bottom: 16px;
-  }}
-  .pt-row {{
-    display: grid;
-    grid-template-columns: 90px 1fr 1fr;
-    border-bottom: 1px solid var(--border);
-  }}
-  .pt-row:last-child {{ border-bottom: none; }}
-  .pt-cell {{
-    padding: 14px 16px;
-    font-size: 13px;
-    color: var(--text-muted);
-    border-right: 1px solid var(--border);
-  }}
-  .pt-cell:last-child {{ border-right: none; }}
-  .pt-header .pt-cell {{ font-size: 11px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: var(--text-subtle); }}
-  .pt-you   {{ color: #f59e0b !important; font-weight: 600; }}
-  .pt-them  {{ color: #a855f7 !important; font-weight: 600; }}
-  .pt-label {{ font-weight: 600; color: var(--text-subtle) !important; font-size: 11px !important; text-transform: uppercase; letter-spacing: .06em; }}
-  .pursue-alert {{
-    font-size: 13px;
-    line-height: 1.7;
-    color: #f97316;
-    background: rgba(249,115,22,.08);
-    border: 1px solid rgba(249,115,22,.2);
-    border-radius: var(--radius-sm);
-    padding: 14px 16px;
-    margin-bottom: 12px;
-  }}
-  .lang-mismatch-alert {{
-    font-size: 13px;
-    line-height: 1.7;
-    color: #eab308;
-    background: rgba(234,179,8,.08);
-    border: 1px solid rgba(234,179,8,.2);
-    border-radius: var(--radius-sm);
-    padding: 14px 16px;
-  }}
-
-  /* ── Strategist ── */
-  .strategist-wrap {{ display: flex; flex-direction: column; gap: 16px; }}
-  .core-problem-card {{
-    background: rgba(168,85,247,.06);
-    border: 1px solid rgba(168,85,247,.15);
-    border-radius: var(--radius-sm);
-    padding: 20px;
-  }}
-  .core-problem-label {{ font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-1); margin-bottom: 10px; }}
-  .core-problem-text {{ font-size: 14px; line-height: 1.8; color: var(--text-muted); }}
-  .strategy-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
-  @media(max-width:560px) {{ .strategy-grid {{ grid-template-columns: 1fr; }} }}
-  .strategy-col {{
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 18px;
-  }}
-  .strategy-col-title {{ font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; margin-bottom: 14px; }}
-  .stop-title  {{ color: #ef4444; }}
-  .start-title {{ color: #22c55e; }}
-  .strategy-list {{ list-style: none; display: flex; flex-direction: column; gap: 10px; }}
-  .strategy-stop-item,
-  .strategy-start-item {{ font-size: 13px; line-height: 1.7; color: var(--text-muted); }}
-  .roadmap-card {{
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 20px;
-  }}
-  .roadmap-label {{ font-size: 11px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: var(--accent-3); margin-bottom: 10px; }}
-  .roadmap-text {{ font-size: 14px; line-height: 1.9; color: var(--text-muted); }}
-
-  /* ── Findings ── */
-  .findings-list {{ display: flex; flex-direction: column; gap: 12px; }}
-  .finding-card {{
-    display: grid;
-    grid-template-columns: 40px 1fr;
-    gap: 16px;
-    align-items: start;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 20px;
-    transition: border-color .2s;
-  }}
-  .finding-card:hover {{ border-color: var(--border-hover); }}
-  .finding-index {{
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-subtle);
-    font-variant-numeric: tabular-nums;
-    letter-spacing: .05em;
-    padding-top: 2px;
-  }}
-  .finding-title {{ font-size: 14px; font-weight: 700; color: var(--text); margin-bottom: 10px; }}
-  .finding-quote {{
-    font-size: 13px;
-    font-style: italic;
-    color: var(--accent-1);
-    border-left: 2px solid rgba(168,85,247,.4);
-    padding-left: 12px;
-    margin-bottom: 10px;
-    line-height: 1.6;
-  }}
-  .finding-analysis {{ font-size: 13px; line-height: 1.7; color: var(--text-muted); }}
-
-  /* ── Verdict ── */
-  .verdict-card {{
-    position: relative;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 48px 40px;
-    text-align: center;
-    overflow: hidden;
-  }}
-  .verdict-card::before {{
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: radial-gradient(ellipse 80% 60% at 50% 100%, rgba(168,85,247,.08) 0%, transparent 70%);
-    pointer-events: none;
-  }}
-  .verdict-meta-row {{
-    display: flex;
-    justify-content: center;
-    gap: 10px;
-    flex-wrap: wrap;
-    margin-bottom: 20px;
-  }}
-  .verdict-type-badge {{
-    display: inline-block;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: .12em;
-    text-transform: uppercase;
-    color: var(--accent-1);
-    background: rgba(168,85,247,.12);
-    border: 1px solid rgba(168,85,247,.2);
-    border-radius: 99px;
-    padding: 6px 14px;
-  }}
-  .verdict-trend-badge {{
-    display: inline-block;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: .08em;
-    color: var(--text-muted);
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: 99px;
-    padding: 6px 14px;
-  }}
-  .verdict-type {{
-    font-size: clamp(32px, 6vw, 52px);
-    font-weight: 900;
-    letter-spacing: -.03em;
-    background: var(--grad-love);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    margin-bottom: 8px;
-  }}
-  .verdict-label {{
-    font-size: 15px;
-    color: var(--text-muted);
-    margin-bottom: 28px;
-  }}
-  .verdict-divider {{
-    width: 40px;
-    height: 1px;
-    background: var(--border);
-    margin: 0 auto 28px;
-  }}
-  .verdict-text {{
-    font-size: 16px;
-    line-height: 1.8;
-    color: var(--text-muted);
-    max-width: 600px;
-    margin: 0 auto;
-  }}
-
-  /* ── Charts ── */
-  .chart-card {{
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 28px;
-  }}
-  .chart-title {{ font-size: 13px; font-weight: 600; color: var(--text-muted); margin-bottom: 20px; }}
-  .chart-wrap {{ position: relative; height: 180px; }}
-  .charts-row {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
-
-  /* ── Analysis Row ── */
-  .analysis-row {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
-  @media(max-width:560px) {{ .analysis-row {{ grid-template-columns: 1fr; }} }}
-  .analysis-card {{
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 24px;
-  }}
-  .analysis-card-title {{
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: .1em;
-    text-transform: uppercase;
-    color: var(--text-subtle);
-    margin-bottom: 16px;
-  }}
-
-  /* ── Footer ── */
-  .footer {{
-    text-align: center;
-    padding: 32px 24px;
-    font-size: 11px;
-    color: var(--text-subtle);
-    border-top: 1px solid var(--border);
-    letter-spacing: .03em;
-  }}
-
-  @media (max-width: 500px) {{
-    .score-grid {{ grid-template-columns: 1fr; }}
-    .charts-row {{ grid-template-columns: 1fr; }}
-    .ingredient-row {{ grid-template-columns: 90px 1fr 40px; }}
-    .verdict-card {{ padding: 32px 20px; }}
-    .analysis-row {{ grid-template-columns: 1fr; }}
-    .portrait-grid {{ grid-template-columns: 1fr; }}
-    .lang-cards {{ grid-template-columns: repeat(2, 1fr); }}
-  }}
-
-  /* ── Score Description ── */
-  .score-desc {{
-    margin-top: 10px;
-    font-size: 12px;
-    color: var(--text-muted);
-    line-height: 1.6;
-    text-align: left;
-  }}
-
-  /* ── Relationship Stage Timeline ── */
-  .stage-wrap {{ padding: 4px 0; }}
-  .stage-timeline {{
-    display: flex;
-    align-items: flex-start;
-    gap: 0;
-    overflow-x: auto;
-    padding-bottom: 12px;
-    margin-bottom: 20px;
-    scrollbar-width: none;
-  }}
-  .stage-timeline::-webkit-scrollbar {{ display: none; }}
-  .stage-node {{
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    flex: 1;
-    min-width: 80px;
-    position: relative;
-  }}
-  .stage-node::before {{
-    content: '';
-    position: absolute;
-    top: 8px;
-    left: 50%;
-    width: 100%;
-    height: 2px;
-    background: var(--surface-2);
-    z-index: 0;
-  }}
-  .stage-node:last-child::before {{ display: none; }}
-  .stage-dot {{
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: var(--surface-2);
-    border: 2px solid var(--border);
-    position: relative;
-    z-index: 1;
-    margin-bottom: 8px;
-    transition: all .3s;
-  }}
-  .stage-node.active .stage-dot {{
-    background: var(--accent-1);
-    border-color: var(--accent-1);
-    box-shadow: 0 0 12px rgba(168,85,247,.5);
-    transform: scale(1.3);
-  }}
-  .stage-label {{
-    font-size: 10px;
-    color: var(--text-subtle);
-    text-align: center;
-    line-height: 1.4;
-  }}
-  .stage-node.active .active-label {{
-    color: var(--accent-1);
-    font-weight: 600;
-    font-size: 11px;
-  }}
-  .situ-badge {{
-    background: rgba(234,179,8,.08);
-    border: 1px solid rgba(234,179,8,.2);
-    border-radius: var(--radius-sm);
-    padding: 10px 14px;
-    font-size: 13px;
-    color: #eab308;
-    font-weight: 500;
-    margin-bottom: 12px;
-  }}
-  .stage-evidence {{
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-top: 6px;
-    margin-bottom: 12px;
-  }}
-  .stage-desc {{
-    font-size: 13px;
-    color: var(--text-muted);
-    line-height: 1.7;
-    margin-bottom: 12px;
-  }}
-  .stage-risk-row, .stage-adv-row {{
-    display: flex;
-    gap: 10px;
-    font-size: 13px;
-    margin-bottom: 8px;
-    align-items: flex-start;
-  }}
-  .stage-risk-label {{ color: #ef4444; font-weight: 600; white-space: nowrap; }}
-  .stage-adv-label  {{ color: #22c55e; font-weight: 600; white-space: nowrap; }}
-  .stage-risk-text, .stage-adv-text {{ color: var(--text-muted); }}
-
-  /* ── Emotional Asymmetry ── */
-  .asym-wrap {{ padding: 4px 0; }}
-  .asym-score-row {{
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 12px;
-    gap: 16px;
-  }}
-  .asym-score-val {{ font-size: 48px; font-weight: 900; line-height: 1; letter-spacing: -.03em; }}
-  .asym-score-label {{ font-size: 11px; color: var(--text-muted); font-weight: 500; margin-top: 4px; }}
-  .asym-roles {{ display: flex; flex-direction: column; gap: 6px; }}
-  .asym-role {{
-    font-size: 12px;
-    font-weight: 600;
-    padding: 4px 10px;
-    border-radius: 99px;
-    border: 1px solid;
-  }}
-  .anchor-role {{ color: #a855f7; border-color: rgba(168,85,247,.3); background: rgba(168,85,247,.08); }}
-  .float-role  {{ color: #6b7280; border-color: rgba(107,114,128,.3); background: rgba(107,114,128,.08); }}
-  .asym-bar-track {{ height: 4px; background: var(--surface-2); border-radius: 99px; overflow: hidden; margin-bottom: 14px; }}
-  .asym-bar-fill  {{ height: 100%; border-radius: 99px; transition: width .6s; }}
-  .asym-anchor-desc {{ font-size: 13px; color: var(--text-muted); line-height: 1.7; margin-bottom: 10px; }}
-  .asym-conflict {{ font-size: 13px; color: var(--text-muted); }}
-  .asym-conflict-label {{ color: #eab308; font-weight: 600; margin-right: 8px; }}
-
-  /* ── Language Patterns ── */
-  .lang-wrap {{ padding: 4px 0; }}
-  .lang-cards {{
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 10px;
-    margin-bottom: 14px;
-  }}
-  .lang-card {{
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 16px 12px;
-    text-align: center;
-  }}
-  .lang-card-label {{ font-size: 10px; font-weight: 600; color: var(--text-subtle); letter-spacing: .05em; text-transform: uppercase; margin-bottom: 8px; }}
-  .lang-card-val   {{ font-size: 18px; font-weight: 800; margin-bottom: 4px; }}
-  .lang-card-sub   {{ font-size: 10px; color: var(--text-subtle); }}
-  .lang-stats-row {{
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-size: 12px;
-    color: var(--text-muted);
-    margin-bottom: 12px;
-    flex-wrap: wrap;
-  }}
-  .lang-stat-sep {{ color: var(--text-subtle); }}
-  .lang-finding {{
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-left: 3px solid var(--accent-1);
-    border-radius: var(--radius-sm);
-    padding: 14px 16px;
-  }}
-  .lang-finding-label {{ font-size: 10px; font-weight: 600; color: var(--accent-1); letter-spacing: .08em; text-transform: uppercase; margin-bottom: 8px; display: block; }}
-  .lang-finding p {{ font-size: 13px; color: var(--text-muted); line-height: 1.7; }}
-
-  /* ── Personality Portrait ── */
-  .portrait-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 20px; }}
-  .portrait-person {{
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px;
-  }}
-  .portrait-person-title {{ font-size: 13px; font-weight: 700; color: var(--text-muted); letter-spacing: .05em; text-transform: uppercase; margin-bottom: 12px; }}
-  .portrait-traits {{ display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 14px; }}
-  .trait-chip {{
-    font-size: 12px;
-    font-weight: 600;
-    padding: 4px 10px;
-    border-radius: 99px;
-    background: rgba(168,85,247,.12);
-    border: 1px solid rgba(168,85,247,.25);
-    color: #c084fc;
-  }}
-  .portrait-needs {{ font-size: 13px; color: var(--text-muted); margin-bottom: 14px; line-height: 1.6; }}
-  .needs-label {{ color: var(--accent-1); font-weight: 600; margin-right: 6px; }}
-  .portrait-defenses-title {{ font-size: 11px; font-weight: 600; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 10px; }}
-  .defense-item {{
-    background: var(--surface-2);
-    border-radius: var(--radius-sm);
-    padding: 10px 12px;
-    margin-bottom: 8px;
-  }}
-  .defense-type {{ font-size: 12px; font-weight: 700; color: #f97316; margin-bottom: 4px; }}
-  .defense-detail {{ font-size: 12px; color: var(--text-muted); margin-bottom: 4px; }}
-  .defense-quote {{
-    font-size: 12px;
-    color: var(--text-muted);
-    font-style: italic;
-    padding: 4px 8px;
-    border-left: 2px solid rgba(249,115,22,.3);
-    margin: 6px 0;
-  }}
-  .defense-meaning {{ font-size: 12px; color: #6b7280; line-height: 1.6; margin-top: 4px; }}
-  .b5-section {{ margin-top: 14px; }}
-  .b5-row {{ display: flex; justify-content: space-between; align-items: center; padding: 5px 0; border-bottom: 1px solid var(--border); font-size: 12px; }}
-  .b5-label {{ color: var(--text-muted); }}
-  .b5-val {{ font-weight: 600; font-size: 11px; max-width: 60%; text-align: right; line-height: 1.4; }}
-  .portrait-trust {{ font-size: 12px; color: var(--text-muted); margin-top: 12px; line-height: 1.6; }}
-  .trust-label {{ color: #3b82f6; font-weight: 600; margin-right: 6px; }}
-
-  /* ── Needs-Behavior Map ── */
-  .nbm-section {{
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px;
-  }}
-  .nbm-title {{ font-size: 12px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 16px; }}
-  .nbm-list {{ display: flex; flex-direction: column; gap: 14px; }}
-  .nbm-item {{
-    background: var(--surface-2);
-    border-radius: var(--radius-sm);
-    padding: 14px;
-  }}
-  .nbm-behavior {{ font-size: 13px; font-style: italic; color: var(--text); margin-bottom: 4px; }}
-  .nbm-arrow {{ font-size: 18px; color: var(--accent-1); margin: 2px 0; }}
-  .nbm-need {{ font-size: 13px; font-weight: 700; color: #c084fc; margin-bottom: 6px; }}
-  .nbm-decode {{ font-size: 12px; color: var(--text-muted); line-height: 1.6; }}
-
-  /* ── Strategy Quote/Script ── */
-  .strategy-reason {{ font-size: 11px; color: var(--text-muted); margin-top: 4px; line-height: 1.5; }}
-  .strategy-timing {{
-    font-size: 11px;
-    color: #a855f7;
-    margin-top: 4px;
-    font-weight: 500;
-  }}
-  .strategy-quote {{
-    font-size: 11px;
-    font-style: italic;
-    color: #6b7280;
-    padding: 4px 8px;
-    border-left: 2px solid rgba(239,68,68,.4);
-    margin-top: 6px;
-  }}
-  .strategy-script {{
-    font-size: 11px;
-    font-style: italic;
-    color: #6b7280;
-    padding: 4px 8px;
-    border-left: 2px solid rgba(34,197,94,.4);
-    margin-top: 6px;
-  }}
-
-  /* ── Walk-away Point ── */
-  .walkaway-card {{
-    background: rgba(239,68,68,.06);
-    border: 1px solid rgba(239,68,68,.2);
-    border-left: 3px solid #ef4444;
-    border-radius: var(--radius-sm);
-    padding: 18px 20px;
-  }}
-  .walkaway-label {{ font-size: 12px; font-weight: 700; color: #ef4444; letter-spacing: .06em; margin-bottom: 10px; }}
-  .walkaway-trigger {{ font-size: 13px; color: var(--text-muted); line-height: 1.7; margin-bottom: 6px; }}
-  .walkaway-reason {{ font-size: 12px; color: #6b7280; line-height: 1.6; }}
-
-  /* ── Repair Attempts ── */
-  .repair-section {{ margin-top: 14px; }}
-  .repair-label {{ font-size: 11px; font-weight: 600; color: var(--text-subtle); text-transform: uppercase; letter-spacing: .07em; margin-bottom: 8px; }}
-  .repair-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }}
-  .repair-item {{ background: var(--surface-2); border-radius: 6px; padding: 8px 10px; display: flex; flex-direction: column; gap: 2px; }}
-  .repair-key {{ font-size: 10px; color: var(--text-subtle); font-weight: 600; text-transform: uppercase; letter-spacing: .05em; }}
-  .repair-val {{ font-size: 12px; color: var(--text-muted); line-height: 1.5; }}
-
-  /* ── Emotional Availability ── */
-  .ea-card {{
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
-    padding: 16px 18px;
-    margin-top: 12px;
-  }}
-  .ea-header {{ display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }}
-  .ea-label {{ font-size: 12px; font-weight: 700; color: var(--text-muted); }}
-  .ea-badge {{ font-size: 11px; font-weight: 700; border: 1px solid; border-radius: 99px; padding: 3px 10px; letter-spacing: .05em; }}
-  .ea-evidence {{ font-size: 13px; color: var(--text-muted); line-height: 1.7; margin-bottom: 6px; }}
-  .ea-risk {{ font-size: 12px; color: #6b7280; line-height: 1.6; }}
-
-  /* ── Pursue-Distance Loop Steps ── */
-  .loop-steps {{ margin-top: 10px; display: flex; flex-direction: column; gap: 6px; }}
-  .loop-step {{ display: flex; align-items: flex-start; gap: 8px; font-size: 12px; color: var(--text-muted); line-height: 1.5; }}
-  .loop-num {{ min-width: 20px; height: 20px; border-radius: 50%; background: rgba(249,115,22,.2); color: #f97316; font-size: 11px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }}
-
-  /* ── Asymmetry Power/Turning ── */
-  .asym-power {{ font-size: 12px; color: var(--text-muted); margin-top: 8px; line-height: 1.6; }}
-  .asym-power-label {{ color: #3b82f6; font-weight: 600; margin-right: 6px; }}
-  .asym-turning {{ margin-top: 12px; background: var(--surface-2); border-radius: var(--radius-sm); padding: 12px 14px; }}
-  .asym-turning-label {{ font-size: 11px; font-weight: 600; color: #eab308; letter-spacing: .06em; }}
-  .asym-turning-date {{ font-size: 11px; color: var(--text-subtle); margin-left: 8px; }}
-  .asym-turning-event {{ font-size: 12px; color: var(--text-muted); margin-top: 6px; line-height: 1.6; }}
-
-  /* ── TA回我了底层报告皮肤 ── */
-  :root {{
-    --font-cn: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
-    --ink: #f4ebe5;
-    --ink-soft: #d9c5bc;
-    --ink-dim: #aa8f86;
-    --panel: rgba(23, 19, 20, .78);
-    --panel-strong: rgba(16, 13, 14, .9);
-    --line: rgba(244, 214, 204, .18);
-    --brand: #e7a19a;
-    --brand-strong: #d95b68;
-    --stage-shadow: 0 30px 90px rgba(0, 0, 0, .28);
-  }}
-  body {{
-    font-family: var(--font-cn);
-    color: var(--ink);
-    text-rendering: geometricPrecision;
-    -webkit-font-smoothing: antialiased;
-    background:
-      linear-gradient(90deg, rgba(14,12,16,.98), rgba(39,28,33,.94) 45%, rgba(15,13,18,.97)),
-      linear-gradient(180deg, #181116 0%, #271a21 52%, #0d0a0f 100%);
-    position: relative;
-    overflow-x: hidden;
-  }}
-  body::before {{
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: -2;
-    background:
-      radial-gradient(ellipse at 17% 82%, rgba(246, 174, 160, .18) 0 8%, transparent 26%),
-      radial-gradient(ellipse at 82% 14%, rgba(227, 116, 131, .1) 0 9%, transparent 25%),
-      conic-gradient(from 188deg at 18% 0%, transparent 0deg, rgba(244, 182, 170, .25) 13deg, rgba(244, 182, 170, .08) 25deg, transparent 38deg),
-      linear-gradient(102deg, rgba(0,0,0,.68) 0 9%, transparent 28% 74%, rgba(0,0,0,.5) 96%),
-      linear-gradient(28deg, transparent 60%, rgba(91,37,49,.36));
-  }}
-  body::after {{
-    content: "";
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    z-index: -1;
-    background:
-      linear-gradient(180deg, rgba(7,5,8,.18), rgba(7,5,8,.72)),
-      linear-gradient(90deg, rgba(0,0,0,.72), transparent 18%, transparent 76%, rgba(0,0,0,.52));
-  }}
-  body.report-tone-positive {{
-    --ink: #2f1817;
-    --ink-soft: #60403c;
-    --ink-dim: #82615b;
-    --panel: rgba(255, 250, 244, .94);
-    --panel-strong: rgba(255, 252, 247, .98);
-    --line: rgba(119, 71, 63, .22);
-    --brand: #a84d5d;
-    --brand-strong: #d98257;
-    color-scheme: light;
-    background:
-      linear-gradient(115deg, rgba(255,224,214,.7), rgba(255,238,210,.9) 42%, rgba(255,250,235,.96)),
-      linear-gradient(180deg, #fff4ec 0%, #ffe7dc 100%);
-  }}
-  body.report-tone-positive::before {{
-    background:
-      radial-gradient(ellipse at 12% 24%, rgba(219,116,126,.2) 0 9%, transparent 24%),
-      radial-gradient(ellipse at 92% 70%, rgba(214,129,87,.18) 0 8%, transparent 24%),
-      radial-gradient(ellipse at 72% 12%, rgba(255,255,232,.64) 0 7%, transparent 24%),
-      linear-gradient(105deg, rgba(199,87,105,.16), transparent 42%),
-      repeating-linear-gradient(25deg, rgba(255,255,255,.15) 0 2px, transparent 2px 120px);
-  }}
-  body.report-tone-positive::after {{
-    background:
-      linear-gradient(180deg, rgba(255,245,232,.1), rgba(255,165,177,.24)),
-      linear-gradient(90deg, rgba(120,54,67,.18), transparent 24%, transparent 76%, rgba(120,54,67,.14));
-  }}
-  body.report-tone-negative {{
-    --ink: #f1e7ef;
-    --ink-soft: #cbb4c5;
-    --ink-dim: #987a90;
-    --panel: rgba(12, 12, 30, .78);
-    --panel-strong: rgba(8, 8, 22, .92);
-    --line: rgba(244, 86, 151, .2);
-    --brand: #f45697;
-    --brand-strong: #7b5cff;
-    background:
-      linear-gradient(105deg, rgba(6,8,26,.98), rgba(17,11,37,.94) 48%, rgba(70,13,47,.94)),
-      linear-gradient(180deg, #0d1025 0%, #14122d 52%, #080714 100%);
-  }}
-  body.report-tone-negative::before {{
-    background:
-      radial-gradient(ellipse at 15% 78%, rgba(255,142,196,.28) 0 8%, transparent 21%),
-      radial-gradient(ellipse at 12% 11%, rgba(255,178,175,.18) 0 9%, transparent 22%),
-      conic-gradient(from 190deg at 18% 0%, transparent 0deg, rgba(255,143,174,.35) 12deg, rgba(255,143,174,.08) 24deg, transparent 38deg),
-      linear-gradient(68deg, transparent 0 54%, rgba(170,24,89,.24) 78%, rgba(233,55,121,.18)),
-      linear-gradient(115deg, rgba(0,0,0,.36), transparent 34%);
-  }}
-  .hero {{
-    max-width: 1160px;
-    margin: 0 auto;
-    padding: clamp(54px, 8vw, 98px) 24px clamp(36px, 5vw, 64px);
-    text-align: left;
-    border-bottom: 0;
-  }}
-  .hero::before {{
-    display: none;
-  }}
-  .hero-brand {{
-    display: inline-flex;
-    padding: 8px 12px;
-    border: 1px solid var(--line);
-    background: color-mix(in srgb, var(--panel-strong) 72%, transparent);
-    color: var(--brand);
-    font-size: 13px;
-    font-weight: 900;
-    letter-spacing: -.03em;
-    margin-bottom: 28px;
-  }}
-  .hero-layout {{
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) 280px;
-    gap: clamp(24px, 6vw, 80px);
-    align-items: end;
-  }}
-  .hero-eyebrow,
-  .section-label {{
-    font-size: 13px;
-    font-weight: 800;
-    letter-spacing: .08em;
-    color: var(--brand);
-    margin-bottom: 14px;
-    text-transform: none;
-  }}
-  .hero-title {{
-    font-family: var(--font-cn);
-    font-size: clamp(52px, 9vw, 116px);
-    font-weight: 850;
-    letter-spacing: -.045em;
-    line-height: 1.04;
-    color: var(--ink);
-    background: none;
-    -webkit-text-fill-color: currentColor;
-    text-wrap: balance;
-    margin: 0 0 22px;
-  }}
-  .hero-contact,
-  .hero-summary {{
-    max-width: 780px;
-    color: var(--ink-soft);
-    font-size: clamp(17px, 2.2vw, 24px);
-    line-height: 1.75;
-  }}
-  .hero-contact span {{
-    color: var(--ink);
-  }}
-  .hero-date {{
-    display: none;
-  }}
-  .hero-ticket {{
-    border: 1px solid var(--line);
-    background: var(--panel-strong);
-    box-shadow: var(--stage-shadow);
-    padding: 20px;
-    backdrop-filter: blur(10px) saturate(110%);
-  }}
-  .hero-ticket span,
-  .hero-ticket i,
-  .hero-ticket b {{
-    display: block;
-    color: var(--ink-dim);
-    font-size: 12px;
-    line-height: 1.7;
-    font-style: normal;
-  }}
-  .hero-ticket strong {{
-    display: block;
-    color: var(--ink);
-    font-size: 34px;
-    line-height: 1;
-    margin: 8px 0 18px;
-    letter-spacing: -.06em;
-  }}
-  .container {{
-    max-width: 1160px;
-    padding: 10px 24px 92px;
-  }}
-  .section {{
-    margin-bottom: clamp(34px, 6vw, 78px);
-  }}
-  .score-grid,
-  .stat-grid,
-  .charts-row,
-  .analysis-row,
-  .portrait-grid,
-  .strategy-grid {{
-    gap: 16px;
-  }}
-  .score-card,
-  .stat-card,
-  .chart-card,
-  .analysis-card,
-  .verdict-card,
-  .finding-card,
-  .warning-card,
-  .person-card,
-  .strategy-col,
-  .roadmap-card,
-  .core-problem-card,
-  .walkaway-card,
-  .stage-wrap,
-  .asym-wrap,
-  .personality-table,
-  .nbm-section,
-  .ea-card,
-  .lang-patterns-wrap {{
-    border: 1px solid var(--line);
-    border-radius: 0;
-    background:
-      linear-gradient(145deg, color-mix(in srgb, var(--brand) 10%, transparent), transparent 44%),
-      var(--panel);
-    box-shadow: var(--stage-shadow);
-    backdrop-filter: blur(10px) saturate(110%);
-  }}
-  .score-card {{
-    text-align: left;
-    min-height: 210px;
-    padding: 28px;
-  }}
-  .score-card::before {{
-    height: 100%;
-    width: 3px;
-    right: auto;
-    bottom: 0;
-  }}
-  .score-emoji {{
-    font-size: 30px;
-    margin-bottom: 18px;
-  }}
-  .score-label,
-  .stat-meta,
-  .chart-title,
-  .analysis-card-title,
-  .core-problem-label,
-  .roadmap-label,
-  .walkaway-label,
-  .repair-label,
-  .nbm-title {{
-    color: var(--ink-dim);
-    text-transform: none;
-    letter-spacing: .04em;
-  }}
-  .score-value,
-  .stat-main,
-  .verdict-type,
-  .gottman-ratio-val,
-  .asym-score-val {{
-    color: var(--ink) !important;
-    background: none !important;
-    -webkit-text-fill-color: currentColor !important;
-  }}
-  .score-desc,
-  .stat-sub,
-  .finding-analysis,
-  .warning-evidence,
-  .core-problem-text,
-  .roadmap-text,
-  .verdict-text,
-  .stage-desc,
-  .asym-anchor-desc,
-  .repair-val,
-  .portrait-trust {{
-    color: var(--ink-soft);
-  }}
-  .ingredient-track,
-  .compare-track,
-  .sternberg-track,
-  .gottman-bar-track,
-  .asym-bar-track,
-  .score-bar {{
-    background: color-mix(in srgb, var(--ink) 12%, transparent);
-  }}
-  .score-bar-fill,
-  .ingredient-fill,
-  .compare-you,
-  .compare-them,
-  .sternberg-fill,
-  .gottman-bar-fill,
-  .asym-bar-fill {{
-    background: linear-gradient(90deg, var(--brand), var(--brand-strong)) !important;
-  }}
-  .verdict-card {{
-    padding: clamp(30px, 6vw, 68px);
-  }}
-  .verdict-type {{
-    font-family: var(--font-cn);
-    font-size: clamp(44px, 8vw, 92px);
-    letter-spacing: -.08em;
-    line-height: 1;
-  }}
-  .verdict-type-badge,
-  .verdict-trend-badge,
-  .horseman-chip,
-  .trait-chip {{
-    border-radius: 0;
-    border-color: var(--line);
-    background: color-mix(in srgb, var(--brand) 14%, transparent);
-    color: var(--ink);
-  }}
-  .footer {{
-    max-width: 920px;
-    margin: 0 auto;
-    border-top: 1px solid var(--line);
-    color: var(--ink-dim);
-    background: transparent;
-  }}
-  .footer p {{
-    color: var(--ink-soft) !important;
-  }}
-  @media (max-width: 760px) {{
-    .hero-layout {{
-      grid-template-columns: 1fr;
-    }}
-    .hero-ticket {{
-      max-width: 360px;
-    }}
-  }}
-
-  /* 应用内报告：与外层 UI 使用同一套版式变量 */
   body,
   .report-document {{
-    --report-bg: #f5f3ee;
-    --report-bg-2: #e9e3d8;
-    --report-panel: rgba(255, 252, 247, .92);
-    --report-panel-strong: #fffdf8;
-    --report-ink: #211f1c;
-    --report-soft: #5c5750;
-    --report-muted: #8a8075;
-    --report-line: rgba(47, 42, 35, .18);
-    --report-accent: #6f6251;
-    --report-accent-strong: #2c2924;
-    --report-good: #1f8d5a;
-    --report-danger: #b64242;
-    --report-shadow: 0 18px 50px rgba(48, 41, 31, .12);
-    background: transparent !important;
-    color: var(--report-ink);
+    margin: 0;
+    --ta-bg: #f5f3ee;
+    --ta-bg-2: #e9e3d8;
+    --ta-panel: rgba(255, 252, 247, .94);
+    --ta-panel-strong: #fffdf8;
+    --ta-ink: #211f1c;
+    --ta-soft: #5c5750;
+    --ta-muted: #8a8075;
+    --ta-line: rgba(47, 42, 35, .18);
+    --ta-accent: #6f6251;
+    --ta-accent-strong: #2c2924;
+    --ta-good: #1f8d5a;
+    --ta-danger: #b64242;
+    --ta-shadow: 0 18px 50px rgba(48, 41, 31, .12);
+    color: var(--ta-ink);
+    background: linear-gradient(135deg, var(--ta-bg), var(--ta-bg-2));
     font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
-    min-height: auto;
+  }}
+  .report-document {{
+    background: transparent !important;
   }}
   body.report-tone-positive,
   .report-document.report-tone-positive {{
-    --report-bg: #fff1f2;
-    --report-bg-2: #f3c9ce;
-    --report-panel: rgba(255, 248, 246, .92);
-    --report-panel-strong: #fffaf7;
-    --report-ink: #35151b;
-    --report-soft: #6f4048;
-    --report-muted: #9c6670;
-    --report-line: rgba(125, 54, 66, .2);
-    --report-accent: #b94f64;
-    --report-accent-strong: #7b2435;
-    --report-good: #247b5b;
-    --report-danger: #9f2d3f;
-    --report-shadow: 0 20px 56px rgba(139, 54, 70, .16);
+    --ta-bg: #fff1f2; --ta-bg-2: #f3c9ce; --ta-panel: rgba(255, 248, 246, .94); --ta-panel-strong: #fffaf7;
+    --ta-ink: #35151b; --ta-soft: #6f4048; --ta-muted: #9c6670; --ta-line: rgba(125, 54, 66, .2); --ta-accent: #b94f64; --ta-accent-strong: #7b2435; --ta-good: #247b5b; --ta-danger: #9f2d3f;
   }}
   body.report-tone-negative,
   .report-document.report-tone-negative {{
-    --report-bg: #11100d;
-    --report-bg-2: #2a2418;
-    --report-panel: rgba(31, 28, 22, .9);
-    --report-panel-strong: #19160f;
-    --report-ink: #f6eddb;
-    --report-soft: #d7c3a2;
-    --report-muted: #a99776;
-    --report-line: rgba(215, 177, 101, .24);
-    --report-accent: #c89c48;
-    --report-accent-strong: #f0c56d;
-    --report-good: #64c28f;
-    --report-danger: #df6b62;
-    --report-shadow: 0 24px 70px rgba(0, 0, 0, .32);
+    --ta-bg: #11100d; --ta-bg-2: #2a2418; --ta-panel: rgba(31, 28, 22, .9); --ta-panel-strong: #19160f;
+    --ta-ink: #f6eddb; --ta-soft: #d7c3a2; --ta-muted: #a99776; --ta-line: rgba(215, 177, 101, .24); --ta-accent: #c89c48; --ta-accent-strong: #f0c56d; --ta-good: #64c28f; --ta-danger: #df6b62;
   }}
-  :host-context(body.ui-rose) .report-document {{
-    --report-bg: #fff1f2;
-    --report-bg-2: #f3c9ce;
-    --report-panel: rgba(255, 248, 246, .92);
-    --report-panel-strong: #fffaf7;
-    --report-ink: #35151b;
-    --report-soft: #6f4048;
-    --report-muted: #9c6670;
-    --report-line: rgba(125, 54, 66, .2);
-    --report-accent: #b94f64;
-    --report-accent-strong: #7b2435;
-  }}
-  :host-context(body.ui-gold) .report-document {{
-    --report-bg: #11100d;
-    --report-bg-2: #2a2418;
-    --report-panel: rgba(31, 28, 22, .9);
-    --report-panel-strong: #19160f;
-    --report-ink: #f6eddb;
-    --report-soft: #d7c3a2;
-    --report-muted: #a99776;
-    --report-line: rgba(215, 177, 101, .24);
-    --report-accent: #c89c48;
-    --report-accent-strong: #f0c56d;
-  }}
-  :host-context(body.ui-minimal) .report-document {{
-    --report-bg: #f5f3ee;
-    --report-bg-2: #e9e3d8;
-    --report-panel: rgba(255, 252, 247, .92);
-    --report-panel-strong: #fffdf8;
-    --report-ink: #211f1c;
-    --report-soft: #5c5750;
-    --report-muted: #8a8075;
-    --report-line: rgba(47, 42, 35, .18);
-    --report-accent: #6f6251;
-    --report-accent-strong: #2c2924;
-  }}
-  body::before,
-  body::after,
-  .report-document::before,
-  .report-document::after {{
-    display: none !important;
-  }}
-  .hero,
-  .footer {{
-    display: none !important;
-  }}
-  .report-shell {{
-    max-width: 1120px;
-    margin: 0 auto;
-    padding: clamp(22px, 4vw, 42px);
-    color: var(--report-ink);
-  }}
-  .report-overview {{
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(260px, 340px);
-    gap: clamp(22px, 5vw, 64px);
-    align-items: end;
-    padding: clamp(26px, 5vw, 58px);
-    border: 1px solid var(--report-line);
-    background:
-      radial-gradient(circle at 8% 12%, color-mix(in srgb, var(--report-accent) 18%, transparent), transparent 32%),
-      linear-gradient(135deg, color-mix(in srgb, var(--report-bg) 82%, transparent), color-mix(in srgb, var(--report-bg-2) 74%, transparent)),
-      var(--report-panel-strong);
-    box-shadow: var(--report-shadow);
-  }}
-  .report-kicker,
-  .section-label {{
-    margin: 0 0 14px;
-    color: var(--report-accent);
-    font-size: 14px;
-    font-weight: 800;
-    letter-spacing: .04em;
-    text-transform: none;
-  }}
-  .report-title {{
-    margin: 0;
-    color: var(--report-ink);
-    font-size: clamp(48px, 8vw, 92px);
-    line-height: .98;
-    letter-spacing: -.07em;
-    font-weight: 900;
-  }}
-  .report-subtitle {{
-    max-width: 780px;
-    margin: 22px 0 0;
-    color: var(--report-soft);
-    font-size: clamp(18px, 2.2vw, 24px);
-    line-height: 1.7;
-  }}
-  .report-facts {{
-    display: grid;
-    gap: 10px;
-    margin: 0;
-  }}
-  .report-facts div {{
-    display: grid;
-    grid-template-columns: 76px 1fr;
-    gap: 12px;
-    padding: 14px 0;
-    border-bottom: 1px solid var(--report-line);
-  }}
-  .report-facts dt {{
-    color: var(--report-muted);
-    font-size: 13px;
-  }}
-  .report-facts dd {{
-    color: var(--report-ink);
-    font-size: 15px;
-    font-weight: 800;
-  }}
-  .container,
-  .report-shell .section {{
-    max-width: none;
-  }}
-  .report-shell .section {{
-    margin: clamp(28px, 5vw, 56px) 0 0;
-  }}
-  .section-heading {{
-    display: grid;
-    grid-template-columns: 74px minmax(0, 1fr);
-    gap: 18px;
-    align-items: start;
-    margin-bottom: 22px;
-  }}
-  .section-num {{
-    color: var(--report-accent);
-    font-family: Georgia, "Times New Roman", serif;
-    font-size: 28px;
-    font-style: italic;
-    font-weight: 800;
-    line-height: 1;
-  }}
-  .section-heading h2 {{
-    margin: 0;
-    color: var(--report-ink);
-    font-size: clamp(28px, 4vw, 48px);
-    line-height: 1.05;
-    letter-spacing: -.05em;
-  }}
-  .section-intro {{
-    margin-top: 8px;
-    color: var(--report-soft);
-    font-size: 16px;
-    line-height: 1.75;
-  }}
-  .report-stack {{
-    display: grid;
-    gap: 16px;
-  }}
-  .report-two-col {{
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-    gap: 16px;
-  }}
-  .report-card,
-  .score-card,
-  .stat-card,
-  .chart-card,
-  .analysis-card,
-  .finding-card,
-  .warning-card,
-  .person-card,
-  .strategy-col,
-  .roadmap-card,
-  .core-problem-card,
-  .walkaway-card,
-  .stage-wrap,
-  .asym-wrap,
-  .personality-table,
-  .nbm-section,
-  .ea-card,
-  .lang-patterns-wrap,
-  .verdict-card {{
-    border: 1px solid var(--report-line) !important;
-    border-radius: 0 !important;
-    background: var(--report-panel) !important;
-    box-shadow: none !important;
-    color: var(--report-ink);
-  }}
-  .score-grid,
-  .stat-grid,
-  .charts-row,
-  .analysis-row,
-  .portrait-grid,
-  .strategy-grid {{
-    gap: 16px;
-  }}
-  .score-grid {{
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-  }}
-  .score-card {{
-    min-height: 198px;
-    padding: 26px !important;
-    text-align: left;
-  }}
-  .score-card::before {{
-    display: none;
-  }}
-  .score-value,
-  .stat-main,
-  .verdict-type,
-  .gottman-ratio-val,
-  .asym-score-val {{
-    color: var(--report-ink) !important;
-    background: none !important;
-    -webkit-text-fill-color: currentColor !important;
-  }}
-  .score-label,
-  .stat-meta,
-  .chart-title,
-  .analysis-card-title,
-  .core-problem-label,
-  .roadmap-label,
-  .walkaway-label,
-  .repair-label,
-  .nbm-title,
-  .ingredient-name {{
-    color: var(--report-muted) !important;
-    text-transform: none;
-    letter-spacing: .02em;
-  }}
-  .score-desc,
-  .stat-sub,
-  .finding-analysis,
-  .warning-evidence,
-  .core-problem-text,
-  .roadmap-text,
-  .verdict-text,
-  .stage-desc,
-  .asym-anchor-desc,
-  .repair-val,
-  .portrait-trust,
-  .hero-summary {{
-    color: var(--report-soft) !important;
-  }}
-  .score-bar,
-  .ingredient-track,
-  .compare-track,
-  .sternberg-track,
-  .gottman-bar-track,
-  .asym-bar-track {{
-    background: color-mix(in srgb, var(--report-muted) 20%, transparent) !important;
-  }}
-  .score-bar-fill,
-  .ingredient-fill,
-  .compare-you,
-  .compare-them,
-  .sternberg-fill,
-  .gottman-bar-fill,
-  .asym-bar-fill {{
-    background: linear-gradient(90deg, var(--report-accent), var(--report-accent-strong)) !important;
-  }}
-  .ingredient-list,
-  .compare-list,
-  .findings-list {{
-    border: 1px solid var(--report-line);
-    background: var(--report-panel);
-    padding: 22px;
-  }}
-  .ingredient-row {{
-    grid-template-columns: 104px 1fr 52px;
-  }}
-  .verdict-card {{
-    padding: clamp(26px, 5vw, 48px) !important;
-  }}
-  .verdict-type {{
-    font-size: clamp(38px, 6vw, 68px);
-    line-height: 1.05;
-    letter-spacing: -.06em;
-  }}
-  .verdict-type-badge,
-  .verdict-trend-badge,
-  .horseman-chip,
-  .trait-chip,
-  .warning-badge {{
-    border-radius: 0 !important;
-    border-color: var(--report-line) !important;
-    background: color-mix(in srgb, var(--report-accent) 12%, transparent) !important;
-    color: var(--report-ink) !important;
-  }}
-  .report-note {{
-    margin-top: clamp(32px, 5vw, 58px);
-    padding-top: 18px;
-    border-top: 1px solid var(--report-line);
-    color: var(--report-muted);
-    font-size: 13px;
-    line-height: 1.8;
-  }}
-  @media (max-width: 860px) {{
-    .report-overview,
-    .report-two-col {{
-      grid-template-columns: 1fr;
-    }}
-    .score-grid {{
-      grid-template-columns: 1fr;
-    }}
-    .section-heading {{
-      grid-template-columns: 1fr;
-      gap: 8px;
-    }}
-  }}
+  :host-context(body.ui-rose) .report-document {{ --ta-bg: #fff1f2; --ta-bg-2: #f3c9ce; --ta-panel: rgba(255, 248, 246, .94); --ta-panel-strong: #fffaf7; --ta-ink: #35151b; --ta-soft: #6f4048; --ta-muted: #9c6670; --ta-line: rgba(125, 54, 66, .2); --ta-accent: #b94f64; --ta-accent-strong: #7b2435; }}
+  :host-context(body.ui-gold) .report-document {{ --ta-bg: #11100d; --ta-bg-2: #2a2418; --ta-panel: rgba(31, 28, 22, .9); --ta-panel-strong: #19160f; --ta-ink: #f6eddb; --ta-soft: #d7c3a2; --ta-muted: #a99776; --ta-line: rgba(215, 177, 101, .24); --ta-accent: #c89c48; --ta-accent-strong: #f0c56d; }}
+  :host-context(body.ui-minimal) .report-document {{ --ta-bg: #f5f3ee; --ta-bg-2: #e9e3d8; --ta-panel: rgba(255, 252, 247, .94); --ta-panel-strong: #fffdf8; --ta-ink: #211f1c; --ta-soft: #5c5750; --ta-muted: #8a8075; --ta-line: rgba(47, 42, 35, .18); --ta-accent: #6f6251; --ta-accent-strong: #2c2924; }}
+  * {{ box-sizing: border-box; }}
+  h1, h2, h3, h4, p, dl, dd {{ margin: 0; }}
+  .ta-report {{ max-width: 1120px; margin: 0 auto; padding: clamp(22px, 4vw, 46px); color: var(--ta-ink); }}
+  .ta-summary {{ display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: clamp(24px, 5vw, 64px); align-items: end; padding: clamp(28px, 5vw, 58px); border: 1px solid var(--ta-line); background: radial-gradient(circle at 8% 12%, color-mix(in srgb, var(--ta-accent) 18%, transparent), transparent 32%), linear-gradient(135deg, color-mix(in srgb, var(--ta-bg) 82%, transparent), color-mix(in srgb, var(--ta-bg-2) 72%, transparent)), var(--ta-panel-strong); box-shadow: var(--ta-shadow); }}
+  .ta-kicker, .ta-section-title span, .ta-panel h3 {{ color: var(--ta-accent); font-weight: 800; letter-spacing: .03em; }}
+  .ta-summary h1 {{ margin-top: 16px; font-size: clamp(48px, 8vw, 92px); line-height: .98; letter-spacing: -.07em; font-weight: 900; }}
+  .ta-summary-lead {{ max-width: 780px; margin-top: 22px; color: var(--ta-soft); font-size: clamp(18px, 2.2vw, 24px); line-height: 1.7; }}
+  .ta-facts {{ display: grid; gap: 10px; margin: 0; }}
+  .ta-facts div {{ display: grid; grid-template-columns: 76px 1fr; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--ta-line); }}
+  .ta-facts dt {{ color: var(--ta-muted); font-size: 13px; }}
+  .ta-facts dd {{ color: var(--ta-ink); font-size: 15px; font-weight: 800; }}
+  .ta-section {{ margin-top: clamp(34px, 5vw, 60px); }}
+  .ta-section-title {{ display: grid; grid-template-columns: 74px 1fr; gap: 18px; align-items: start; margin-bottom: 22px; }}
+  .ta-section-title span {{ font-family: Georgia, "Times New Roman", serif; font-size: 28px; font-style: italic; line-height: 1; }}
+  .ta-section-title h2 {{ font-size: clamp(28px, 4vw, 48px); line-height: 1.05; letter-spacing: -.05em; }}
+  .ta-section-title p {{ margin-top: 8px; color: var(--ta-soft); font-size: 16px; line-height: 1.75; }}
+  .ta-stack {{ display: grid; gap: 16px; }}
+  .ta-grid-2, .ta-chart-grid, .ta-action-grid, .ta-portrait-grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }}
+  .ta-score-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 16px; }}
+  .ta-score, .ta-stat, .ta-panel, .ta-evidence-list, .ta-ingredients, .ta-compare-wrap {{ border: 1px solid var(--ta-line); background: var(--ta-panel); padding: 24px; }}
+  .ta-score i {{ display: block; color: var(--ta-accent); font: italic 800 28px Georgia, serif; margin-bottom: 18px; }}
+  .ta-score span, .ta-stat span, .ta-language-card span, .ta-portrait-grid span {{ color: var(--ta-muted); font-size: 13px; font-weight: 700; }}
+  .ta-score strong {{ display: block; margin: 10px 0 12px; color: var(--ta-ink); font-size: 56px; line-height: 1; letter-spacing: -.05em; }}
+  .ta-score p, .ta-stat p, .ta-panel p, .ta-language-note {{ color: var(--ta-soft); font-size: 14px; line-height: 1.75; }}
+  .ta-score em, .ta-ingredients i, .ta-compare i, .ta-model-row i {{ display: block; height: 4px; background: color-mix(in srgb, var(--ta-muted) 22%, transparent); overflow: hidden; }}
+  .ta-score em b, .ta-ingredients i b, .ta-compare i b, .ta-compare i em, .ta-model-row i em {{ display: block; height: 100%; background: linear-gradient(90deg, var(--ta-accent), var(--ta-accent-strong)); }}
+  .ta-ingredients {{ display: grid; gap: 16px; }}
+  .ta-ingredients div {{ display: grid; grid-template-columns: 104px 1fr 52px; gap: 14px; align-items: center; }}
+  .ta-ingredients span {{ color: var(--ta-muted); font-weight: 700; font-size: 13px; }}
+  .ta-ingredients strong {{ text-align: right; }}
+  .ta-stat-grid {{ display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; }}
+  .ta-stat strong {{ display: block; margin-top: 10px; font-size: 28px; line-height: 1.15; }}
+  .ta-evidence-list {{ display: grid; gap: 14px; }}
+  .ta-evidence-item {{ display: grid; grid-template-columns: 56px 1fr; gap: 16px; padding-bottom: 14px; border-bottom: 1px solid var(--ta-line); }}
+  .ta-evidence-item:last-child {{ border-bottom: 0; padding-bottom: 0; }}
+  .ta-evidence-item b {{ color: var(--ta-accent); font-family: Georgia, serif; font-style: italic; }}
+  .ta-evidence-item h4 {{ margin-bottom: 8px; font-size: 18px; }}
+  .ta-evidence-item blockquote {{ margin: 0 0 10px; padding-left: 12px; border-left: 2px solid var(--ta-accent); color: var(--ta-soft); }}
+  .ta-warning {{ border: 1px solid var(--ta-line); padding: 16px; margin-top: 12px; }}
+  .ta-warning:first-of-type {{ margin-top: 0; }}
+  .ta-warning div {{ display: flex; justify-content: space-between; gap: 14px; margin-bottom: 8px; }}
+  .ta-warning span {{ color: var(--ta-danger); font-weight: 800; }}
+  .ta-language-grid {{ display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }}
+  .ta-language-card, .ta-portrait-grid > div {{ border: 1px solid var(--ta-line); padding: 14px; }}
+  .ta-language-note {{ margin-top: 14px; }}
+  .ta-compare-wrap {{ display: grid; gap: 20px; }}
+  .ta-compare p {{ display: flex; justify-content: space-between; color: var(--ta-soft); font-size: 13px; font-weight: 700; margin-bottom: 8px; }}
+  .ta-compare i {{ position: relative; height: 8px; }}
+  .ta-compare i b {{ position: absolute; left: 0; top: 0; }}
+  .ta-compare i em {{ position: absolute; right: 0; top: 0; background: var(--ta-accent-strong); }}
+  .ta-chart-large, .ta-chart-grid .ta-panel {{ min-height: 260px; }}
+  .ta-chart-wrap {{ height: 190px; position: relative; }}
+  .ta-stage-main {{ display: flex; justify-content: space-between; gap: 18px; margin-bottom: 12px; }}
+  .ta-stage-main span, .ta-stage-card b {{ color: var(--ta-accent); }}
+  .ta-model-row {{ display: grid; grid-template-columns: 70px 1fr 40px; gap: 12px; align-items: center; margin: 14px 0; }}
+  .ta-model-row span, .ta-model-row b {{ color: var(--ta-muted); font-size: 13px; }}
+  .ta-model-note {{ margin-top: 12px; }}
+  .ta-ratio strong {{ font-size: 48px; letter-spacing: -.05em; }}
+  .ta-ratio span {{ margin-left: 12px; color: var(--ta-muted); }}
+  .ta-chip-row, .ta-portrait-grid div div {{ display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }}
+  .ta-chip {{ border: 1px solid var(--ta-line); color: var(--ta-ink); padding: 5px 10px; font-size: 12px; }}
+  .ta-person-head, .ta-person-row {{ display: grid; grid-template-columns: 110px 1fr 1fr; gap: 12px; padding: 12px 0; border-bottom: 1px solid var(--ta-line); }}
+  .ta-person-head b, .ta-person-row b {{ font-size: 14px; }}
+  .ta-person-row span {{ color: var(--ta-muted); }}
+  .ta-action-list {{ list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }}
+  .ta-action-list li {{ border-bottom: 1px solid var(--ta-line); padding-bottom: 14px; }}
+  .ta-action-list b {{ display: inline-block; margin-right: 10px; color: var(--ta-accent); }}
+  .ta-action-list span {{ font-weight: 800; }}
+  .ta-stopline {{ margin-top: 18px; padding-top: 18px; border-top: 1px solid var(--ta-line); }}
+  .ta-final strong {{ display: block; font-size: clamp(38px, 6vw, 68px); line-height: 1; letter-spacing: -.06em; margin: 10px 0 14px; }}
+  .ta-note {{ margin-top: 42px; padding-top: 18px; border-top: 1px solid var(--ta-line); color: var(--ta-muted); font-size: 13px; line-height: 1.8; }}
+  .ta-empty {{ color: var(--ta-muted); font-size: 14px; line-height: 1.8; }}
+  @media (max-width: 900px) {{ .ta-summary, .ta-grid-2, .ta-chart-grid, .ta-action-grid, .ta-portrait-grid {{ grid-template-columns: 1fr; }} .ta-score-grid, .ta-stat-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
+  @media (max-width: 640px) {{ .ta-report {{ padding: 18px; }} .ta-summary {{ padding: 24px; }} .ta-score-grid, .ta-stat-grid, .ta-language-grid {{ grid-template-columns: 1fr; }} .ta-section-title {{ grid-template-columns: 1fr; gap: 8px; }} .ta-person-head, .ta-person-row {{ grid-template-columns: 1fr; }} }}
 </style>
 </head>
 <body class="report-tone-{report_tone}">
-
-<main class="report-shell">
-
-  <section class="report-overview">
+<article class="ta-report">
+  <section class="ta-summary">
     <div>
-      <p class="report-kicker">I. 结论</p>
-      <h1 class="report-title">{relationship_type}</h1>
-      <p class="report-subtitle">{relationship_label or verdict}</p>
+      <p class="ta-kicker">I. 结论</p>
+      <h1>{relationship_type}</h1>
+      <p class="ta-summary-lead">{relationship_label or verdict}</p>
     </div>
-    <dl class="report-facts">
+    <dl class="ta-facts">
       <div><dt>对象</dt><dd>{escape_html(contact_name)}</dd></div>
       <div><dt>样本</dt><dd>{total_messages:,} 条消息</dd></div>
-      <div><dt>范围</dt><dd>{date_range[0]} 至 {date_range[1]}</dd></div>
+      <div><dt>范围</dt><dd>{escape_html(date_range[0])} 至 {escape_html(date_range[1])}</dd></div>
       <div><dt>密度</dt><dd>{total_days} 天 · 平均 {avg_daily:.1f} 条/天</dd></div>
     </dl>
   </section>
 
-  <section class="section">
-    <div class="section-heading">
-      <span class="section-num">II.</span>
-      <div>
-        <h2>核心指数</h2>
-        <p class="section-intro">先看关系的基本盘：谁更主动，谁更被回应，以及互动是否出现失衡。</p>
-      </div>
-    </div>
-    <div class="report-stack">
-      <div class="score-grid">
-        <div class="score-card simp">
-          <div class="score-mark">I.</div>
-          <div class="score-label">主动指数</div>
-          <div class="score-value">{simp}</div>
-          <div class="score-bar"><div class="score-bar-fill" style="width:{simp}%"></div></div>
-          {f'<div class="score-desc">{simp_description}</div>' if simp_description else ''}
-        </div>
-        <div class="score-card loved">
-          <div class="score-mark">II.</div>
-          <div class="score-label">被爱指数</div>
-          <div class="score-value">{loved}</div>
-          <div class="score-bar"><div class="score-bar-fill" style="width:{loved}%"></div></div>
-          {f'<div class="score-desc">{love_description}</div>' if love_description else ''}
-        </div>
-        <div class="score-card cold">
-          <div class="score-mark">III.</div>
-          <div class="score-label">冷淡指数</div>
-          <div class="score-value">{cold}</div>
-          <div class="score-bar"><div class="score-bar-fill" style="width:{cold}%"></div></div>
-        </div>
-      </div>
-      <div class="ingredient-list">
-        <div class="ingredient-row">
-          <span class="ingredient-name">主动投入</span>
-          <div class="ingredient-track"><div class="ingredient-fill i-simp" style="width:{simp}%"></div></div>
-          <span class="ingredient-pct">{simp}%</span>
-        </div>
-        <div class="ingredient-row">
-          <span class="ingredient-name">被爱成分</span>
-          <div class="ingredient-track"><div class="ingredient-fill i-loved" style="width:{loved}%"></div></div>
-          <span class="ingredient-pct">{loved}%</span>
-        </div>
-        <div class="ingredient-row">
-          <span class="ingredient-name">冷淡成分</span>
-          <div class="ingredient-track"><div class="ingredient-fill i-cold" style="width:{cold}%"></div></div>
-          <span class="ingredient-pct">{cold}%</span>
-        </div>
-        <div class="ingredient-row">
-          <span class="ingredient-name">失衡成分</span>
-          <div class="ingredient-track"><div class="ingredient-fill i-tool" style="width:{imbalance}%"></div></div>
-          <span class="ingredient-pct">{imbalance}%</span>
-        </div>
-      </div>
-      <div class="stat-grid">
-        <div class="stat-card">
-          <div class="stat-meta">消息占比</div>
-          <div class="stat-main">{my_ratio}<span style="font-size:.5em;font-weight:500;color:var(--report-muted)">%</span></div>
-          <div class="stat-sub">你 · 对方 {their_ratio}%</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-meta">主动发起</div>
-          <div class="stat-main">{initiative.get('my_starts', 0)}<span style="font-size:.4em;font-weight:500;color:var(--report-muted)"> 次</span></div>
-          <div class="stat-sub">对方 {initiative.get('their_starts', 0)} 次</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-meta">你的回复速度</div>
-          <div class="stat-main" style="font-size:20px;font-weight:800">{reply.get('my_avg_human', 'N/A')}</div>
-          <div class="stat-sub">对方 {reply.get('their_avg_human', 'N/A')}</div>
-        </div>
-        <div class="stat-card">
-          <div class="stat-meta">回速差距</div>
-          <div class="stat-main">{speed_ratio}<span style="font-size:.45em;font-weight:500;color:var(--report-muted)">x</span></div>
-          <div class="stat-sub">对方比你慢这么多倍</div>
-        </div>
-      </div>
+  <section class="ta-section">
+    <div class="ta-section-title"><span>II.</span><div><h2>核心指数</h2><p>先看关系的基本盘：谁更主动，谁更被回应，以及互动是否出现失衡。</p></div></div>
+    <div class="ta-stack"><div class="ta-score-grid">{score_cards}</div><div class="ta-ingredients">{ingredient_rows}</div><div class="ta-stat-grid">{metric_cards}</div></div>
+  </section>
+
+  <section class="ta-section">
+    <div class="ta-section-title"><span>III.</span><div><h2>证据与风险</h2><p>把判断落到可核查的证据、风险提示和语言模式，避免只看一句话下结论。</p></div></div>
+    <div class="ta-stack"><div class="ta-evidence-list">{render_findings(analysis.get("key_findings", []))}</div><div class="ta-grid-2"><div class="ta-panel"><h3>风险提示</h3>{render_warnings(analysis.get("danger_warnings", []))}</div><div class="ta-panel"><h3>语言模式</h3>{render_language(analysis.get("language_patterns") or {})}</div></div></div>
+  </section>
+
+  <section class="ta-section">
+    <div class="ta-section-title"><span>IV.</span><div><h2>互动结构</h2><p>这部分看聊天节奏、关系阶段和双方投入结构，判断关系是升温、僵持还是消耗。</p></div></div>
+    <div class="ta-stack">
+      <div class="ta-compare-wrap">{compare_rows}</div>
+      <div class="ta-panel ta-chart-large"><h3>消息趋势</h3><div class="ta-chart-wrap"><canvas id="trendChart"></canvas></div></div>
+      <div class="ta-chart-grid"><div class="ta-panel"><h3>活跃时段</h3><div class="ta-chart-wrap"><canvas id="hourChart"></canvas></div></div><div class="ta-panel"><h3>消息占比</h3><div class="ta-chart-wrap"><canvas id="pieChart"></canvas></div></div></div>
+      <div class="ta-panel">{render_stage(analysis.get("relationship_stage"))}</div>
+      <div class="ta-grid-2">{render_love_model(analysis.get("sternberg", {}) or {}, analysis.get("gottman", {}) or {})}</div>
     </div>
   </section>
 
-  <section class="section">
-    <div class="section-heading">
-      <span class="section-num">III.</span>
-      <div>
-        <h2>证据与风险</h2>
-        <p class="section-intro">把模型判断落到具体证据，先看关键发现，再看风险信号和语言模式。</p>
-      </div>
-    </div>
-    <div class="report-stack">
-      <div class="findings-list">
-        {findings_html}
-      </div>
-      <div class="report-two-col">
-        <div class="report-card">
-          <p class="section-label">风险提示</p>
-          {danger_warnings_html}
-        </div>
-        {f'''<div class="report-card">
-          <p class="section-label">语言模式</p>
-          {lang_patterns_html}
-        </div>''' if lang_patterns_html else f'''<div class="report-card">
-          <p class="section-label">语言模式</p>
-          <p style="color:var(--report-soft);font-size:14px;line-height:1.8;">本次样本未形成足够稳定的语言模式结论。</p>
-        </div>'''}
-      </div>
-    </div>
+  <section class="ta-section">
+    <div class="ta-section-title"><span>V.</span><div><h2>行动建议</h2><p>最后回到可执行选择：怎么停、怎么进、什么时候撤，以及双方人格结构的约束。</p></div></div>
+    <div class="ta-stack"><div class="ta-panel ta-final"><h3>最终判断</h3><strong>{relationship_type}</strong><p>{verdict or relationship_label}</p>{f'<p>趋势：{relationship_trend}</p>' if relationship_trend else ''}</div>{render_strategy(analysis.get("strategist", {}) or {})}<div class="ta-grid-2">{render_personality_block(analysis.get("personality", {}) or {}, analysis.get("personality_portrait", {}) or {})}</div></div>
   </section>
 
-  <section class="section">
-    <div class="section-heading">
-      <span class="section-num">IV.</span>
-      <div>
-        <h2>互动结构</h2>
-        <p class="section-intro">这部分看聊天节奏、关系阶段和双方投入结构，判断关系是升温、僵持还是消耗。</p>
-      </div>
-    </div>
-    <div class="report-stack">
-      <div class="compare-list">
-        <div class="compare-row">
-          <div class="compare-header">
-            <span>你 · 消息量 {my_ratio}%</span>
-            <span>{their_ratio}% · 对方</span>
-          </div>
-          <div class="compare-track">
-            <div class="compare-you" style="width:{my_ratio}%"></div>
-            <div class="compare-them" style="width:{their_ratio}%"></div>
-          </div>
-        </div>
-        <div class="compare-row">
-          <div class="compare-header">
-            <span>你 · 主动发起 {initiative.get('my_starts', 0)}次</span>
-            <span>{initiative.get('their_starts', 0)}次 · 对方</span>
-          </div>
-          <div class="compare-track">
-            <div class="compare-you" style="width:{int(initiative.get('my_starts',0)/(max(initiative.get('my_starts',0)+initiative.get('their_starts',0),1))*100)}%"></div>
-            <div class="compare-them" style="width:{int(initiative.get('their_starts',0)/(max(initiative.get('my_starts',0)+initiative.get('their_starts',0),1))*100)}%"></div>
-          </div>
-        </div>
-        <div class="compare-row">
-          <div class="compare-header">
-            <span>你 · 先说晚安 {goodnight.get('my_goodnight', 0)}次</span>
-            <span>{goodnight.get('their_goodnight', 0)}次 · 对方</span>
-          </div>
-          <div class="compare-track">
-            <div class="compare-you" style="width:{int(goodnight.get('my_goodnight',0)/(max(goodnight.get('my_goodnight',0)+goodnight.get('their_goodnight',0),1))*100)}%"></div>
-            <div class="compare-them" style="width:{int(goodnight.get('their_goodnight',0)/(max(goodnight.get('my_goodnight',0)+goodnight.get('their_goodnight',0),1))*100)}%"></div>
-          </div>
-        </div>
-      </div>
-      <div class="chart-card">
-        <div class="chart-title">消息趋势（最近60天）</div>
-        <div class="chart-wrap"><canvas id="trendChart"></canvas></div>
-      </div>
-      <div class="charts-row">
-        <div class="chart-card">
-          <div class="chart-title">活跃时段分布</div>
-          <div class="chart-wrap"><canvas id="hourChart"></canvas></div>
-        </div>
-        <div class="chart-card">
-          <div class="chart-title">消息占比</div>
-          <div class="chart-wrap"><canvas id="pieChart"></canvas></div>
-        </div>
-      </div>
-      {f'''<div class="report-card">
-        <p class="section-label">关系阶段</p>
-        {relationship_stage_html}
-      </div>''' if relationship_stage_html else ''}
-      <div class="analysis-row">
-        <div class="analysis-card">
-          <div class="analysis-card-title">爱情三角</div>
-          {sternberg_html}
-        </div>
-        <div class="analysis-card">
-          <div class="analysis-card-title">关系健康度</div>
-          {gottman_html}
-        </div>
-      </div>
-      {f'''<div class="analysis-card">
-        <div class="analysis-card-title">情感投入不对称</div>
-        {emotional_asym_html}
-      </div>''' if emotional_asym_html else ''}
-    </div>
-  </section>
-
-  <section class="section">
-    <div class="section-heading">
-      <span class="section-num">V.</span>
-      <div>
-        <h2>行动建议</h2>
-        <p class="section-intro">最后回到可执行选择：怎么停、怎么进、什么时候撤，以及双方人格结构的约束。</p>
-      </div>
-    </div>
-    <div class="report-stack">
-      <div class="verdict-card">
-        <div class="verdict-meta-row">
-          <span class="verdict-type-badge">TA回我了 · 深度分析报告</span>
-          {f'<span class="verdict-trend-badge">{trend_icon} {relationship_trend}</span>' if relationship_trend else ''}
-        </div>
-        <div class="verdict-type">{relationship_type}</div>
-        <div class="verdict-label">{relationship_label}</div>
-        <div class="verdict-divider"></div>
-        <div class="verdict-text">{verdict}</div>
-      </div>
-      <div class="report-card">
-        <p class="section-label">军师建议</p>
-        {strategist_html}
-      </div>
-      <div class="report-card">
-        <p class="section-label">人格与依恋</p>
-        {personality_html}
-      </div>
-      {f'''<div class="report-card">
-        <p class="section-label">人格深度画像</p>
-        {portrait_html}
-      </div>''' if portrait_html else ''}
-    </div>
-  </section>
-
-  <p class="report-note">仅供参考 · 数据本地处理，不上传任何服务器 · TA回我了 · {date_str}</p>
-
-</main>
-
+  <p class="ta-note">仅供参考 · 数据本地处理，不上传任何服务器 · TA回我了 · {date_str}</p>
+</article>
 <script>
 const d = {chart_data_js};
-const reportRoot = document.querySelector('.report-shell') || document.body;
+const reportRoot = document.querySelector('.ta-report') || document;
 const reportStyle = getComputedStyle(reportRoot);
-const accent = reportStyle.getPropertyValue('--report-accent').trim() || '#6f6251';
-const accentStrong = reportStyle.getPropertyValue('--report-accent-strong').trim() || '#2c2924';
-const muted = reportStyle.getPropertyValue('--report-muted').trim() || '#8a8075';
-const line = reportStyle.getPropertyValue('--report-line').trim() || 'rgba(47,42,35,.18)';
-const panel = reportStyle.getPropertyValue('--report-panel-strong').trim() || '#fffdf8';
-const ink = reportStyle.getPropertyValue('--report-ink').trim() || '#211f1c';
-const base = {{
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {{
-    legend: {{ display: false }},
-    tooltip: {{
-      backgroundColor: panel,
-      borderColor: line,
-      borderWidth: 1,
-      titleColor: ink,
-      bodyColor: muted,
-      padding: 12,
-    }}
-  }}
-}};
-
-new Chart(document.getElementById('trendChart'), {{
-  type: 'line',
-  data: {{
-    labels: d.trend_labels,
-    datasets: [{{
-      data: d.trend_data,
-      borderColor: accent,
-      backgroundColor: 'rgba(111,98,81,.10)',
-      fill: true,
-      tension: 0.4,
-      pointRadius: 0,
-      borderWidth: 2,
-    }}]
-  }},
-  options: {{
-    ...base,
-    scales: {{
-      x: {{ ticks: {{ color: muted, maxTicksLimit: 8, font: {{ size: 11 }} }}, grid: {{ color: line }}, border: {{ display: false }} }},
-      y: {{ ticks: {{ color: muted, font: {{ size: 11 }} }}, grid: {{ color: line }}, border: {{ display: false }} }}
-    }}
-  }}
-}});
-
-new Chart(document.getElementById('hourChart'), {{
-  type: 'bar',
-  data: {{
-    labels: d.hour_labels,
-    datasets: [{{
-      data: d.hour_data,
-      backgroundColor: accent,
-      borderColor: accentStrong,
-      borderWidth: 1,
-      borderRadius: 3,
-    }}]
-  }},
-  options: {{
-    ...base,
-    scales: {{
-      x: {{ ticks: {{ color: muted, font: {{ size: 10 }}, maxTicksLimit: 8 }}, grid: {{ display: false }}, border: {{ display: false }} }},
-      y: {{ ticks: {{ color: muted, font: {{ size: 10 }} }}, grid: {{ color: line }}, border: {{ display: false }} }}
-    }}
-  }}
-}});
-
-new Chart(document.getElementById('pieChart'), {{
-  type: 'doughnut',
-  data: {{
-    labels: ['你', '{escape_html(contact_name)}'],
-    datasets: [{{
-      data: d.pie_data,
-      backgroundColor: [accentStrong, accent],
-      borderColor: [accentStrong, accent],
-      borderWidth: 2,
-    }}]
-  }},
-  options: {{
-    ...base,
-    plugins: {{
-      ...base.plugins,
-      legend: {{
-        display: true,
-        position: 'bottom',
-        labels: {{ color: muted, font: {{ size: 11 }}, padding: 16, boxWidth: 10 }}
-      }}
-    }},
-    cutout: '65%'
-  }}
-}});
+const accent = reportStyle.getPropertyValue('--ta-accent').trim() || '#6f6251';
+const accentStrong = reportStyle.getPropertyValue('--ta-accent-strong').trim() || '#2c2924';
+const muted = reportStyle.getPropertyValue('--ta-muted').trim() || '#8a8075';
+const line = reportStyle.getPropertyValue('--ta-line').trim() || 'rgba(47,42,35,.18)';
+const panel = reportStyle.getPropertyValue('--ta-panel-strong').trim() || '#fffdf8';
+const ink = reportStyle.getPropertyValue('--ta-ink').trim() || '#211f1c';
+const canvas = (id) => document.getElementById(id);
+const base = {{ responsive: true, maintainAspectRatio: false, plugins: {{ legend: {{ display: false }}, tooltip: {{ backgroundColor: panel, borderColor: line, borderWidth: 1, titleColor: ink, bodyColor: muted, padding: 12 }} }} }};
+if (window.Chart && canvas('trendChart')) {{
+  new Chart(canvas('trendChart'), {{ type: 'line', data: {{ labels: d.trend_labels, datasets: [{{ data: d.trend_data, borderColor: accent, backgroundColor: 'rgba(111,98,81,.10)', fill: true, tension: .35, pointRadius: 0, borderWidth: 2 }}] }}, options: {{ ...base, scales: {{ x: {{ ticks: {{ color: muted, maxTicksLimit: 8, font: {{ size: 11 }} }}, grid: {{ color: line }}, border: {{ display: false }} }}, y: {{ ticks: {{ color: muted, font: {{ size: 11 }} }}, grid: {{ color: line }}, border: {{ display: false }} }} }} }} }});
+  new Chart(canvas('hourChart'), {{ type: 'bar', data: {{ labels: d.hour_labels, datasets: [{{ data: d.hour_data, backgroundColor: accent, borderColor: accentStrong, borderWidth: 1 }}] }}, options: {{ ...base, scales: {{ x: {{ ticks: {{ color: muted, maxTicksLimit: 8, font: {{ size: 10 }} }}, grid: {{ display: false }}, border: {{ display: false }} }}, y: {{ ticks: {{ color: muted, font: {{ size: 10 }} }}, grid: {{ color: line }}, border: {{ display: false }} }} }} }} }});
+  new Chart(canvas('pieChart'), {{ type: 'doughnut', data: {{ labels: ['你', '{escape_html(contact_name)}'], datasets: [{{ data: d.pie_data, backgroundColor: [accentStrong, accent], borderColor: [accentStrong, accent], borderWidth: 2 }}] }}, options: {{ ...base, plugins: {{ ...base.plugins, legend: {{ display: true, position: 'bottom', labels: {{ color: muted, font: {{ size: 11 }}, padding: 16, boxWidth: 10 }} }} }}, cutout: '65%' }} }});
+}}
 </script>
 </body>
-</html>"""
-
+</html>'''
 
 def main():
     parser = argparse.ArgumentParser()

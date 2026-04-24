@@ -70,18 +70,19 @@ function switchPane(name) {
   name = aliases[name] || name;
   document.querySelectorAll(".nav-item").forEach((el) => el.classList.toggle("active", el.dataset.step === name));
   document.querySelectorAll(".pane").forEach((el) => el.classList.toggle("visible", el.id === `pane-${name}`));
-  const [kicker, title, copy] = PANE_META[name] || PANE_META.main;
-  $("panelKicker").textContent = kicker;
+  const [, title, copy] = PANE_META[name] || PANE_META.main;
   $("panelTitle").textContent = title;
   $("panelCopy").textContent = copy;
 }
 
 function renderStatus(status) {
   state.status = status;
-  $("runtimePath").textContent = status.runtime_root || "-";
-  $("llmState").textContent = status.llm_configured ? `${status.llm_provider || "openai"} · ${status.llm_model || "已配置"}` : "未配置";
-  $("environmentBadge").textContent = status.environment_label || (status.environment_ready ? "环境就绪" : "环境异常");
-  $("environmentBadge").classList.toggle("bad", !status.environment_ready);
+  if ($("runtimePath")) $("runtimePath").textContent = status.runtime_root || "-";
+  if ($("llmState")) $("llmState").textContent = status.llm_configured ? `${status.llm_provider || "openai"} · ${status.llm_model || "已配置"}` : "未配置";
+  if ($("environmentBadge")) {
+    $("environmentBadge").textContent = status.environment_label || (status.environment_ready ? "环境就绪" : "环境异常");
+    $("environmentBadge").classList.toggle("bad", !status.environment_ready);
+  }
 
   if ($("llmProvider")) $("llmProvider").value = status.llm_provider || "openai";
   if ($("llmBaseUrl")) $("llmBaseUrl").value = status.llm_base_url || "";
@@ -282,15 +283,15 @@ function applyProviderDefaults(provider) {
   $("llmModel").value = defaults.model;
 }
 
-const UI_THEMES = ["rose", "blue", "graphite"];
+const UI_THEMES = ["neon", "cyan", "ember"];
 
 function normalizeUiTheme(theme) {
-  return UI_THEMES.includes(theme) ? theme : "rose";
+  return UI_THEMES.includes(theme) ? theme : "neon";
 }
 
 function applyUiTheme(theme) {
   const selected = normalizeUiTheme(theme);
-  document.body.classList.remove("ui-rose", "ui-blue", "ui-graphite", "ui-gold", "ui-minimal");
+  document.body.classList.remove("ui-neon", "ui-cyan", "ui-ember", "ui-rose", "ui-blue", "ui-graphite", "ui-gold", "ui-minimal");
   document.body.classList.add(`ui-${selected}`);
   localStorage.setItem("ta-ui-theme", selected);
   document.querySelectorAll(".theme-choice").forEach((button) => {
@@ -408,7 +409,7 @@ function handleError(error) {
 }
 
 const initialTheme = normalizeUiTheme(localStorage.getItem("ta-ui-theme"));
-localStorage.setItem("ta-ui-theme-v3", "dehydrated-palette");
+localStorage.setItem("ta-ui-theme-v4", "neon-stage");
 applyUiTheme(initialTheme);
 bind();
 switchPane("main");

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TA回我了 - 微信恋爱分析</title>
-  <link rel="stylesheet" href="styles.css?v=20260424-7">
+  <link rel="stylesheet" href="styles.css?v=20260424-8">
 </head>
 <body>
   <header class="top-nav">
@@ -22,33 +22,8 @@
   </header>
 
   <main class="app-shell">
-    <aside class="side-panel" aria-label="运行摘要">
-      <section class="side-card">
-        <span class="roman">I.</span>
-        <h1>本地运行</h1>
-        <p>自动识别微信聊天记录，选择对象，生成分析和报告。</p>
-      </section>
-      <section class="side-meta">
-        <dl>
-          <div>
-            <dt>环境</dt>
-            <dd id="environmentBadge">检测中</dd>
-          </div>
-          <div>
-            <dt>模型</dt>
-            <dd id="llmState">未配置</dd>
-          </div>
-          <div>
-            <dt>路径</dt>
-            <dd><code id="runtimePath">-</code></dd>
-          </div>
-        </dl>
-      </section>
-    </aside>
-
     <section class="stage">
       <section class="hero-panel">
-        <p class="label-caps" id="panelKicker">I. 分析主线</p>
         <h2 id="panelTitle">分析主线</h2>
         <p class="hero-copy" id="panelCopy">识别微信聊天记录，选择一个人，生成潜台词分析和最终报告。</p>
       </section>
@@ -101,7 +76,6 @@
           <section class="report-panel">
             <div class="report-head">
               <div>
-                <p class="label-caps">IV. 报告</p>
                 <h3>结果分析报告</h3>
               </div>
               <a class="secondary link-button disabled" id="openReport" href="#" aria-disabled="true">独立打开</a>
@@ -116,7 +90,6 @@
 
         <article class="pane" id="pane-archive">
           <section class="section-head">
-            <p class="label-caps">II. 角色档案</p>
             <h3>过往分析记录</h3>
             <p>每次生成报告后自动存档；不需要的档案可以直接删除。</p>
           </section>
@@ -125,7 +98,6 @@
 
         <article class="pane" id="pane-personality">
           <section class="section-head">
-            <p class="label-caps">III. 恋爱人格</p>
             <h3>你的关系模式</h3>
             <p>这是关于你自己的恋爱人格分析，不和“角色档案”重复。</p>
           </section>
@@ -147,7 +119,6 @@
 
         <article class="pane" id="pane-settings">
           <section class="section-head">
-            <p class="label-caps">IV. 设置</p>
             <h3>运行与界面</h3>
             <p>配置模型接口、检查环境，并选择界面颜色风格。</p>
           </section>
@@ -189,9 +160,9 @@
             <p class="label-caps">界面风格</p>
             <h4>颜色风格</h4>
             <div class="theme-grid">
-              <button class="theme-choice active" data-theme="rose"><span>I.</span>玫瑰</button>
-              <button class="theme-choice" data-theme="blue"><span>II.</span>钴蓝</button>
-              <button class="theme-choice" data-theme="graphite"><span>III.</span>石墨</button>
+              <button class="theme-choice active" data-theme="neon"><span>I.</span>霓虹紫</button>
+              <button class="theme-choice" data-theme="cyan"><span>II.</span>电光蓝</button>
+              <button class="theme-choice" data-theme="ember"><span>III.</span>暖焰橙</button>
             </div>
           </section>
         </article>
@@ -210,9 +181,9 @@
 
   <footer class="footer">
     <strong>TA回我了</strong>
-    <span>本地运行，数据留在你的电脑。</span>
+    <a href="https://github.com/Exekiel179/she-love-me-web" target="_blank" rel="noreferrer">github.com/Exekiel179/she-love-me-web</a>
   </footer>
 
-  <script src="app.js?v=20260424-7"></script>
+  <script src="app.js?v=20260424-8"></script>
 </body>
 </html>

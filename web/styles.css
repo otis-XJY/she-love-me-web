@@ -1,57 +1,64 @@
 :root {
-  color-scheme: light;
+  color-scheme: dark;
   font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
 }
 
-body.ui-rose {
-  --bg: #fcf9f8;
-  --bg-2: #f0edec;
-  --panel: rgba(252, 249, 248, .92);
-  --panel-strong: #ffffff;
-  --ink: #1b1c1b;
-  --ink-soft: #514346;
-  --muted: #837375;
-  --line: #d5c2c4;
-  --accent: #894854;
-  --accent-strong: #a6606c;
+body,
+body.ui-neon {
+  --bg: #07070d;
+  --bg-2: #151021;
+  --panel: rgba(18, 18, 28, .88);
+  --panel-strong: #101019;
+  --ink: #f3f1ff;
+  --ink-soft: #9fa4cf;
+  --muted: #535a83;
+  --line: rgba(148, 154, 210, .16);
+  --accent: #ca48db;
+  --accent-strong: #ff4ecb;
   --accent-ink: #ffffff;
-  --good: #3f6446;
-  --danger: #894854;
-  --shadow: 0 18px 50px rgba(137, 72, 84, .12);
+  --good: #48e0a4;
+  --danger: #ff4d7d;
+  --hot: #ff8a16;
+  --cool: #22c7ff;
+  --shadow: 0 24px 90px rgba(0, 0, 0, .42);
 }
 
-body.ui-blue {
-  --bg: #f7f9ff;
-  --bg-2: #e8eefb;
-  --panel: rgba(248, 250, 255, .92);
-  --panel-strong: #ffffff;
-  --ink: #171c27;
-  --ink-soft: #556070;
-  --muted: #8791a6;
-  --line: #d3daea;
-  --accent: #3f67d7;
-  --accent-strong: #6884de;
+body.ui-cyan {
+  --bg: #060911;
+  --bg-2: #0d1628;
+  --panel: rgba(15, 19, 34, .9);
+  --panel-strong: #0b0f1d;
+  --ink: #f0f7ff;
+  --ink-soft: #94a8d6;
+  --muted: #4f6189;
+  --line: rgba(116, 151, 219, .18);
+  --accent: #22c7ff;
+  --accent-strong: #2f8cff;
   --accent-ink: #ffffff;
-  --good: #3f6d86;
-  --danger: #894854;
-  --shadow: 0 18px 50px rgba(63, 103, 215, .13);
+  --good: #48e0a4;
+  --danger: #ff4d7d;
+  --hot: #ff8a16;
+  --cool: #22c7ff;
+  --shadow: 0 24px 90px rgba(0, 0, 0, .42);
 }
 
-body.ui-graphite {
-  --bg: #fcf9f8;
-  --bg-2: #f0edec;
-  --panel: rgba(252, 249, 248, .92);
-  --panel-strong: #ffffff;
-  --ink: #1b1c1b;
-  --ink-soft: #514346;
-  --muted: #837375;
-  --line: #d5c2c4;
-  --accent: #40524b;
-  --accent-strong: #6f8178;
+body.ui-ember {
+  --bg: #08070c;
+  --bg-2: #1a1017;
+  --panel: rgba(19, 17, 26, .9);
+  --panel-strong: #100e17;
+  --ink: #fff4f0;
+  --ink-soft: #b7a0c7;
+  --muted: #6a557d;
+  --line: rgba(221, 126, 190, .16);
+  --accent: #ff8a16;
+  --accent-strong: #ff4ecb;
   --accent-ink: #ffffff;
-  --good: #00685f;
-  --danger: #894854;
-  --shadow: 0 18px 50px rgba(64, 82, 75, .14);
+  --good: #48e0a4;
+  --danger: #ff4d7d;
+  --hot: #ff8a16;
+  --cool: #22c7ff;
+  --shadow: 0 24px 90px rgba(0, 0, 0, .42);
 }
 
 * { box-sizing: border-box; }
@@ -62,9 +69,10 @@ body {
   color: var(--ink);
   background-color: var(--bg);
   background-image:
-    linear-gradient(to bottom, color-mix(in oklab, var(--bg) 92%, transparent), color-mix(in oklab, var(--bg) 92%, transparent)),
-    radial-gradient(circle at top left, color-mix(in oklab, var(--accent) 7%, transparent), transparent 26%),
-    radial-gradient(circle at 82% 18%, color-mix(in oklab, var(--accent-strong) 5%, transparent), transparent 18%);
+    radial-gradient(circle at 50% -8%, color-mix(in srgb, var(--accent) 24%, transparent), transparent 34%),
+    radial-gradient(circle at 82% 12%, color-mix(in srgb, var(--cool) 14%, transparent), transparent 26%),
+    radial-gradient(circle at 16% 22%, color-mix(in srgb, var(--hot) 10%, transparent), transparent 24%),
+    linear-gradient(180deg, #141020 0%, var(--bg) 46%, #050509 100%);
   background-attachment: fixed;
   text-rendering: geometricPrecision;
   -webkit-font-smoothing: antialiased;
@@ -84,7 +92,7 @@ h1, h2, h3, h4, p, dl, dd { margin: 0; }
   align-items: center;
   gap: 24px;
   padding: 0 28px;
-  background: color-mix(in srgb, var(--panel-strong) 86%, transparent);
+  background: color-mix(in srgb, var(--panel-strong) 78%, transparent);
   border-bottom: 1px solid var(--line);
   backdrop-filter: blur(18px) saturate(120%);
 }
@@ -106,7 +114,7 @@ h1, h2, h3, h4, p, dl, dd { margin: 0; }
 
 .brand-subtitle,
 .label-caps {
-  color: var(--muted);
+  color: var(--ink-soft);
   font-size: 12px;
   font-weight: 800;
   letter-spacing: .08em;
@@ -164,23 +172,10 @@ h1, h2, h3, h4, p, dl, dd { margin: 0; }
 .runtime-pill i.bad { background: var(--danger); }
 
 .app-shell {
-  display: grid;
-  grid-template-columns: minmax(230px, 280px) minmax(0, 1fr);
-  gap: 28px;
-  width: min(1480px, calc(100vw - 48px));
-  margin: 32px auto 56px;
+  width: min(1260px, calc(100vw - 48px));
+  margin: 48px auto 56px;
 }
 
-.side-panel {
-  position: sticky;
-  top: 104px;
-  align-self: start;
-  display: grid;
-  gap: 16px;
-}
-
-.side-card,
-.side-meta,
 .pane,
 .console-wrap {
   border: 1px solid var(--line);
@@ -188,64 +183,12 @@ h1, h2, h3, h4, p, dl, dd { margin: 0; }
   box-shadow: var(--shadow);
 }
 
-.side-card {
-  padding: 24px;
-}
-
-.roman {
-  display: block;
-  color: var(--accent);
-  font-family: Georgia, "Times New Roman", serif;
-  font-size: 28px;
-  font-style: italic;
-  font-weight: 700;
-  margin-bottom: 16px;
-}
-
-.side-card h1 {
-  font-size: 34px;
-  line-height: 1;
-  letter-spacing: -.05em;
-  margin-bottom: 12px;
-}
-
-.side-card p,
 .hero-copy,
 .section-head p,
 .workflow-card p,
 .config-panel p {
   color: var(--ink-soft);
   line-height: 1.75;
-}
-
-.side-meta {
-  padding: 18px 20px;
-}
-
-.side-meta dl {
-  display: grid;
-  gap: 18px;
-}
-
-.side-meta dt {
-  color: var(--muted);
-  font-size: 11px;
-  font-weight: 800;
-  letter-spacing: .1em;
-  margin-bottom: 5px;
-}
-
-.side-meta dd {
-  color: var(--ink);
-  font-weight: 800;
-}
-
-#environmentBadge {
-  color: var(--good);
-}
-
-#environmentBadge.bad {
-  color: var(--danger);
 }
 
 code {
@@ -262,24 +205,31 @@ code {
 }
 
 .hero-panel {
-  margin: 10px 0 28px;
+  margin: 18px 0 34px;
+  text-align: center;
 }
 
 .hero-panel h2 {
-  font-size: clamp(48px, 7vw, 92px);
+  color: var(--accent-strong);
+  font-size: clamp(62px, 9vw, 128px);
   line-height: .98;
-  letter-spacing: -.07em;
-  margin: 10px 0 14px;
+  letter-spacing: -.08em;
+  margin: 0 0 18px;
+  text-shadow: 0 0 38px color-mix(in srgb, var(--accent) 28%, transparent);
 }
 
 .hero-copy {
-  max-width: 760px;
-  font-size: 18px;
+  max-width: 820px;
+  margin: 0 auto;
+  color: var(--ink-soft);
+  font-size: 20px;
+  font-weight: 700;
 }
 
 .pane {
   display: none;
   padding: clamp(22px, 3.4vw, 42px);
+  border-color: color-mix(in srgb, var(--line) 68%, transparent);
 }
 
 .pane.visible { display: block; }
@@ -296,8 +246,22 @@ code {
 .config-panel,
 .theme-panel {
   border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel-strong) 70%, transparent);
+  background: linear-gradient(180deg, color-mix(in srgb, var(--panel) 92%, transparent), color-mix(in srgb, var(--panel-strong) 88%, transparent));
   padding: 22px;
+}
+
+.workflow-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.workflow-card::before,
+.archive-card::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto;
+  height: 3px;
+  background: linear-gradient(90deg, var(--hot), var(--accent-strong), var(--cool));
 }
 
 .workflow-card h3,
@@ -327,7 +291,7 @@ button,
   justify-content: center;
   gap: 8px;
   border: 1px solid var(--line);
-  background: transparent;
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
   padding: 10px 16px;
   text-decoration: none;
   cursor: pointer;
@@ -348,9 +312,10 @@ button:disabled,
 
 .primary {
   border-color: var(--accent-strong);
-  background: var(--accent-strong);
+  background: linear-gradient(90deg, var(--accent), var(--accent-strong));
   color: var(--accent-ink);
   font-weight: 800;
+  box-shadow: 0 12px 30px color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .secondary {
@@ -490,7 +455,7 @@ select:focus {
   max-height: 240px;
   margin-top: 18px;
   border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel-strong) 76%, transparent);
+  background: color-mix(in srgb, var(--panel-strong) 82%, transparent);
   color: var(--ink-soft);
   padding: 14px;
 }
@@ -551,6 +516,11 @@ select:focus {
 .section-head {
   max-width: 820px;
   margin-bottom: 26px;
+}
+
+.section-head h3 {
+  font-size: clamp(58px, 8vw, 112px);
+  letter-spacing: -.08em;
 }
 
 .archive-grid {
@@ -726,7 +696,9 @@ select:focus {
 
 .theme-choice.active {
   border-color: var(--accent-strong);
-  background: color-mix(in srgb, var(--accent) 12%, var(--panel));
+  background: color-mix(in srgb, var(--accent) 18%, var(--panel));
+  color: var(--ink);
+  box-shadow: 0 10px 34px color-mix(in srgb, var(--accent) 18%, transparent);
 }
 
 .console-wrap {
@@ -787,6 +759,16 @@ select:focus {
   color: var(--accent-strong);
 }
 
+.footer a {
+  color: var(--ink-soft);
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.footer a:hover {
+  color: var(--accent-strong);
+}
+
 .busy button[aria-busy="true"] {
   cursor: wait;
 }
@@ -805,10 +787,6 @@ select:focus {
   .app-shell {
     grid-template-columns: 1fr;
     width: min(100vw - 28px, 920px);
-  }
-  .side-panel {
-    position: static;
-    grid-template-columns: 1fr;
   }
   .workflow-board,
   .archive-grid {

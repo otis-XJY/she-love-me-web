@@ -861,50 +861,51 @@ def render_html(stats, analysis, contact_name):
   body,
   .report-document {{
     margin: 0;
-    --ta-bg: #fcf9f8;
-    --ta-bg-2: #f0edec;
-    --ta-panel: rgba(252, 249, 248, .94);
-    --ta-panel-strong: #ffffff;
-    --ta-ink: #1b1c1b;
-    --ta-soft: #514346;
-    --ta-muted: #837375;
-    --ta-line: #d5c2c4;
-    --ta-accent: #894854;
-    --ta-accent-strong: #a6606c;
-    --ta-good: #3f6446;
-    --ta-danger: #894854;
-    --ta-shadow: 0 18px 50px rgba(137, 72, 84, .12);
+    --ta-bg: #07070d;
+    --ta-bg-2: #151021;
+    --ta-panel: rgba(18, 18, 28, .9);
+    --ta-panel-strong: #101019;
+    --ta-ink: #f3f1ff;
+    --ta-soft: #9fa4cf;
+    --ta-muted: #535a83;
+    --ta-line: rgba(148, 154, 210, .16);
+    --ta-accent: #ca48db;
+    --ta-accent-strong: #ff4ecb;
+    --ta-good: #48e0a4;
+    --ta-danger: #ff4d7d;
+    --ta-hot: #ff8a16;
+    --ta-cool: #22c7ff;
+    --ta-shadow: 0 24px 90px rgba(0, 0, 0, .42);
     color: var(--ta-ink);
     background-color: var(--ta-bg);
     background-image:
-      linear-gradient(to bottom, color-mix(in oklab, var(--ta-bg) 92%, transparent), color-mix(in oklab, var(--ta-bg) 92%, transparent)),
-      radial-gradient(circle at top left, color-mix(in oklab, var(--ta-accent) 7%, transparent), transparent 26%),
-      radial-gradient(circle at 82% 18%, color-mix(in oklab, var(--ta-accent-strong) 5%, transparent), transparent 18%);
+      radial-gradient(circle at 50% -8%, color-mix(in srgb, var(--ta-accent) 24%, transparent), transparent 34%),
+      radial-gradient(circle at 82% 12%, color-mix(in srgb, var(--ta-cool) 14%, transparent), transparent 26%),
+      radial-gradient(circle at 16% 22%, color-mix(in srgb, var(--ta-hot) 10%, transparent), transparent 24%),
+      linear-gradient(180deg, #141020 0%, var(--ta-bg) 46%, #050509 100%);
     font-family: "Microsoft YaHei", "PingFang SC", "Noto Sans CJK SC", sans-serif;
-    color-scheme: light;
+    color-scheme: dark;
   }}
   .report-document {{
     background: transparent !important;
   }}
   body.report-tone-positive,
   .report-document.report-tone-positive {{
-    --ta-bg: #fcf9f8; --ta-bg-2: #f0edec; --ta-panel: rgba(252, 249, 248, .94); --ta-panel-strong: #ffffff;
-    --ta-ink: #1b1c1b; --ta-soft: #514346; --ta-muted: #837375; --ta-line: #d5c2c4; --ta-accent: #894854; --ta-accent-strong: #a6606c; --ta-good: #3f6446; --ta-danger: #894854;
+    --ta-accent: #ca48db; --ta-accent-strong: #ff4ecb;
   }}
   body.report-tone-negative,
   .report-document.report-tone-negative {{
-    --ta-bg: #fcf9f8; --ta-bg-2: #f0edec; --ta-panel: rgba(252, 249, 248, .94); --ta-panel-strong: #ffffff;
-    --ta-ink: #1b1c1b; --ta-soft: #514346; --ta-muted: #837375; --ta-line: #d5c2c4; --ta-accent: #40524b; --ta-accent-strong: #6f8178; --ta-good: #00685f; --ta-danger: #894854;
+    --ta-accent: #22c7ff; --ta-accent-strong: #ca48db;
   }}
-  :host-context(body.ui-rose) .report-document {{ --ta-bg: #fcf9f8; --ta-bg-2: #f0edec; --ta-panel: rgba(252, 249, 248, .94); --ta-panel-strong: #ffffff; --ta-ink: #1b1c1b; --ta-soft: #514346; --ta-muted: #837375; --ta-line: #d5c2c4; --ta-accent: #894854; --ta-accent-strong: #a6606c; --ta-good: #3f6446; --ta-danger: #894854; }}
-  :host-context(body.ui-blue) .report-document {{ --ta-bg: #f7f9ff; --ta-bg-2: #e8eefb; --ta-panel: rgba(248, 250, 255, .94); --ta-panel-strong: #ffffff; --ta-ink: #171c27; --ta-soft: #556070; --ta-muted: #8791a6; --ta-line: #d3daea; --ta-accent: #3f67d7; --ta-accent-strong: #6884de; --ta-good: #3f6d86; --ta-danger: #894854; }}
-  :host-context(body.ui-graphite) .report-document {{ --ta-bg: #fcf9f8; --ta-bg-2: #f0edec; --ta-panel: rgba(252, 249, 248, .94); --ta-panel-strong: #ffffff; --ta-ink: #1b1c1b; --ta-soft: #514346; --ta-muted: #837375; --ta-line: #d5c2c4; --ta-accent: #40524b; --ta-accent-strong: #6f8178; --ta-good: #00685f; --ta-danger: #894854; }}
+  :host-context(body.ui-neon) .report-document {{ --ta-accent: #ca48db; --ta-accent-strong: #ff4ecb; }}
+  :host-context(body.ui-cyan) .report-document {{ --ta-accent: #22c7ff; --ta-accent-strong: #2f8cff; }}
+  :host-context(body.ui-ember) .report-document {{ --ta-accent: #ff8a16; --ta-accent-strong: #ff4ecb; }}
   * {{ box-sizing: border-box; }}
   h1, h2, h3, h4, p, dl, dd {{ margin: 0; }}
   .ta-report {{ max-width: 1120px; margin: 0 auto; padding: clamp(22px, 4vw, 46px); color: var(--ta-ink); }}
-  .ta-summary {{ display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: clamp(24px, 5vw, 64px); align-items: end; padding: clamp(28px, 5vw, 58px); border: 1px solid var(--ta-line); background: radial-gradient(circle at 8% 12%, color-mix(in srgb, var(--ta-accent) 18%, transparent), transparent 32%), linear-gradient(135deg, color-mix(in srgb, var(--ta-bg) 82%, transparent), color-mix(in srgb, var(--ta-bg-2) 72%, transparent)), var(--ta-panel-strong); box-shadow: var(--ta-shadow); }}
+  .ta-summary {{ display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: clamp(24px, 5vw, 64px); align-items: end; padding: clamp(28px, 5vw, 58px); border: 1px solid var(--ta-line); background: radial-gradient(circle at 50% 0%, color-mix(in srgb, var(--ta-accent) 20%, transparent), transparent 38%), linear-gradient(180deg, color-mix(in srgb, var(--ta-panel) 92%, transparent), var(--ta-panel-strong)); box-shadow: var(--ta-shadow); }}
   .ta-kicker, .ta-section-title span, .ta-panel h3 {{ color: var(--ta-accent); font-weight: 800; letter-spacing: .03em; }}
-  .ta-summary h1 {{ margin-top: 16px; font-size: clamp(46px, 7vw, 76px); line-height: 1.02; letter-spacing: -.06em; font-weight: 900; word-break: keep-all; overflow-wrap: normal; }}
+  .ta-summary h1 {{ margin-top: 16px; color: var(--ta-accent-strong); font-size: clamp(56px, 8vw, 96px); line-height: .98; letter-spacing: -.07em; font-weight: 900; word-break: keep-all; overflow-wrap: normal; text-shadow: 0 0 42px color-mix(in srgb, var(--ta-accent) 28%, transparent); }}
   .ta-summary-lead {{ max-width: 780px; margin-top: 22px; color: var(--ta-soft); font-size: clamp(18px, 2.2vw, 24px); line-height: 1.7; }}
   .ta-facts {{ display: grid; gap: 10px; margin: 0; }}
   .ta-facts div {{ display: grid; grid-template-columns: 76px 1fr; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--ta-line); }}
@@ -924,7 +925,7 @@ def render_html(stats, analysis, contact_name):
   .ta-score strong {{ display: block; margin: 10px 0 12px; color: var(--ta-ink); font-size: 56px; line-height: 1; letter-spacing: -.05em; }}
   .ta-score p, .ta-stat p, .ta-panel p, .ta-language-note {{ color: var(--ta-soft); font-size: 14px; line-height: 1.75; }}
   .ta-score em, .ta-ingredients i, .ta-compare i, .ta-model-row i {{ display: block; height: 4px; background: color-mix(in srgb, var(--ta-muted) 22%, transparent); overflow: hidden; }}
-  .ta-score em b, .ta-ingredients i b, .ta-compare i b, .ta-compare i em, .ta-model-row i em {{ display: block; height: 100%; background: linear-gradient(90deg, var(--ta-accent), var(--ta-accent-strong)); }}
+  .ta-score em b, .ta-ingredients i b, .ta-compare i b, .ta-compare i em, .ta-model-row i em {{ display: block; height: 100%; background: linear-gradient(90deg, var(--ta-hot), var(--ta-accent-strong), var(--ta-cool)); }}
   .ta-ingredients {{ display: grid; gap: 16px; }}
   .ta-ingredients div {{ display: grid; grid-template-columns: 104px 1fr 52px; gap: 14px; align-items: center; }}
   .ta-ingredients span {{ color: var(--ta-muted); font-weight: 700; font-size: 13px; }}

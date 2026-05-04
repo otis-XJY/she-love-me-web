@@ -5,6 +5,7 @@ const state = {
   selected: null,
   busy: false,
   logs: [],
+  discoverProgressLines: [],
   latestReportUrl: "",
   pendingApiKey: "",
   quizIndex: 0,
@@ -14,6 +15,11 @@ const state = {
   heroScrollLocked: false,
   lastScrollY: 0,
   touchStartY: 0,
+  dateFrom: "",
+  dateTo: "",
+  dailySeries: [],
+  dailyTotal: 0,
+  messagesReadyContact: "",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -138,13 +144,50 @@ function esc(value) {
     .replaceAll('"', "&quot;");
 }
 
+function clampInt(value, fallback, min, max) {
+  const n = Number.parseInt(String(value ?? ""), 10);
+  if (Number.isNaN(n)) return fallback;
+  return Math.max(min, Math.min(max, n));
+}
+
+function refreshLogView() {
+  const discover =
+    state.discoverProgressLines?.length > 0
+      ? `—— 读取联系人 · 实时进度 ——\n${state.discoverProgressLines.join("\n")}\n——\n\n`
+      : "";
+  if ($("log")) $("log").textContent = discover + state.logs.join("\n\n");
+}
+
+/** @param {{ running?: boolean, contact_current?: number|null, contact_total?: number|null }} payload */
+function updateReadContactProgress(payload) {
+  const el = $("readContactProgress");
+  if (!el) return;
+  if (!payload || payload.running === false) {
+    el.hidden = true;
+    el.textContent = "";
+    return;
+  }
+  el.hidden = false;
+  const ct = payload.contact_total != null ? Number(payload.contact_total) : null;
+  const cu = payload.contact_current != null ? Number(payload.contact_current) : null;
+  if (ct != null && ct > 0 && cu != null && !Number.isNaN(cu) && !Number.isNaN(ct)) {
+    el.textContent = `进度：联系人 ${cu}/${ct}`;
+    return;
+  }
+  if (ct != null && ct > 0) {
+    el.textContent = `进度：联系人 0/${ct}`;
+    return;
+  }
+  el.textContent = "进度：解密与准备中…";
+}
+
 function log(message, data) {
   const line = `[${new Date().toLocaleTimeString()}] ${message}`;
   const extra = data ? `\n${typeof data === "string" ? data : JSON.stringify(data, null, 2)}` : "";
   state.logs.unshift(`${line}${extra}`);
   state.logs = state.logs.slice(0, 80);
   if ($("logLatest")) $("logLatest").textContent = message;
-  if ($("log")) $("log").textContent = state.logs.join("\n\n");
+  refreshLogView();
 }
 
 async function api(path, options = {}) {
@@ -240,8 +283,12 @@ function renderStatus(status, options = {}) {
   if ($("llmProvider")) $("llmProvider").value = status.llm_provider || "openai";
   if ($("llmBaseUrl")) $("llmBaseUrl").value = status.llm_base_url || "";
   if ($("llmModel")) $("llmModel").value = status.llm_model || "";
+  const limits = status.analysis_limits || {};
+  if ($("maxChatChars")) $("maxChatChars").value = String(limits.max_chat_chars || 60000);
+  if ($("retryChatChars")) $("retryChatChars").value = String(limits.retry_chat_chars || 24000);
+  if ($("maxOutputTokens")) $("maxOutputTokens").value = String(limits.max_output_tokens || 12288);
   if ($("configHint")) {
-    $("configHint").textContent = `当前：${status.llm_provider || "openai"} · ${status.llm_base_url || "未设置 BaseURL"} · ${status.llm_model || "未设置模型"} · ${status.llm_key_hint || "未设置"}`;
+    $("configHint").textContent = `当前：${status.llm_provider || "openai"} · ${status.llm_base_url || "未设置 BaseURL"} · ${status.llm_model || "未设置模型"} · ${status.llm_key_hint || "未设置"} · 聊天${limits.max_chat_chars || 60000}字 · 输出${limits.max_output_tokens || 12288}token`;
   }
   updateEndpointPreview();
 
@@ -271,6 +318,7 @@ function clearMainAnalysis() {
     mount.innerHTML = "";
   }
   if ($("selectedHint")) $("selectedHint").textContent = "先选择一个联系人。";
+  resetRangeState();
   setAnalysisProgress(0, "", { hidden: true });
   if ($("scrollReportCue")) $("scrollReportCue").hidden = true;
 }
@@ -494,6 +542,94 @@ function renderContacts() {
   }).join("");
 }
 
+function resetRangeState() {
+  state.dateFrom = "";
+  state.dateTo = "";
+  state.dailySeries = [];
+  state.dailyTotal = 0;
+  state.messagesReadyContact = "";
+  if ($("rangeStart")) {
+    $("rangeStart").value = "";
+    $("rangeStart").disabled = true;
+  }
+  if ($("rangeEnd")) {
+    $("rangeEnd").value = "";
+    $("rangeEnd").disabled = true;
+  }
+  if ($("rangeTotal")) $("rangeTotal").textContent = "所选范围消息总数：-";
+  if ($("dailyList")) $("dailyList").innerHTML = `<div class="contact-empty">选择联系人后显示每日聊天条数。</div>`;
+  if ($("rangeHint")) $("rangeHint").textContent = "选择联系人后可按日期筛选，并查看每天聊天条数。";
+}
+
+function renderDailyList() {
+  const list = $("dailyList");
+  if (!list) return;
+  if (!state.dailySeries.length) {
+    list.innerHTML = `<div class="contact-empty">当前联系人没有可用消息。</div>`;
+    return;
+  }
+  list.innerHTML = state.dailySeries
+    .map((d) => `<div class="daily-row"><span>${esc(d.date)}</span><strong>${Number(d.count || 0).toLocaleString()} 条</strong></div>`)
+    .join("");
+}
+
+function updateRangeSummary() {
+  const totalEl = $("rangeTotal");
+  if (!totalEl || !state.dailySeries.length) {
+    if (totalEl) totalEl.textContent = "所选范围消息总数：-";
+    return;
+  }
+  const from = state.dateFrom || state.dailySeries[0].date;
+  const to = state.dateTo || state.dailySeries[state.dailySeries.length - 1].date;
+  let total = 0;
+  for (const d of state.dailySeries) {
+    if (d.date >= from && d.date <= to) total += Number(d.count || 0);
+  }
+  totalEl.textContent = `所选范围消息总数：${total.toLocaleString()} 条（${from} 至 ${to}）`;
+}
+
+function applyDailyData(data) {
+  state.dailySeries = Array.isArray(data.daily) ? data.daily : [];
+  state.dailyTotal = Number(data.total || 0);
+  const minDate = data.min_date || (state.dailySeries[0] && state.dailySeries[0].date) || "";
+  const maxDate = data.max_date || (state.dailySeries[state.dailySeries.length - 1] && state.dailySeries[state.dailySeries.length - 1].date) || "";
+  state.dateFrom = minDate;
+  state.dateTo = maxDate;
+  if ($("rangeStart")) {
+    $("rangeStart").value = minDate;
+    $("rangeStart").min = minDate;
+    $("rangeStart").max = maxDate;
+    $("rangeStart").disabled = !minDate;
+  }
+  if ($("rangeEnd")) {
+    $("rangeEnd").value = maxDate;
+    $("rangeEnd").min = minDate;
+    $("rangeEnd").max = maxDate;
+    $("rangeEnd").disabled = !maxDate;
+  }
+  if ($("rangeHint")) $("rangeHint").textContent = `已加载 ${state.dailySeries.length} 天聊天分布。`;
+  renderDailyList();
+  updateRangeSummary();
+}
+
+async function ensureSelectedMessagesAndDaily(forceExtract = false) {
+  if (!state.selected) return;
+  const username = state.selected.username || "";
+  const contact = state.selected.display_name || username;
+  if (!username) return;
+  if (forceExtract || state.messagesReadyContact !== username) {
+    if ($("rangeHint")) $("rangeHint").textContent = "正在读取该联系人聊天记录…";
+    const extracted = await api("/api/extract", { method: "POST", body: { contact } });
+    log("消息提取完成", extracted.result.json || extracted.result.stderr);
+    state.messagesReadyContact = username;
+  }
+  const daily = await api("/api/messages/daily");
+  if ((daily.contact_username || "") && daily.contact_username !== username) {
+    throw new Error("读取到的聊天记录与当前联系人不一致，请重试。");
+  }
+  applyDailyData(daily);
+}
+
 async function refreshStatus() {
   renderStatus(await api("/api/status"));
 }
@@ -506,13 +642,7 @@ async function runSetup() {
 }
 
 async function saveConfig() {
-  const inputValue = $("llmApiKey").value.trim();
-  const body = {
-    provider: $("llmProvider").value,
-    base_url: $("llmBaseUrl").value.trim(),
-    model: $("llmModel").value.trim(),
-    api_key: state.pendingApiKey || (inputValue === MASKED_KEY ? "" : inputValue),
-  };
+  const body = readConfigForm();
   log("保存模型接口配置");
   const data = await api("/api/config", { method: "POST", body });
   renderStatus(data.status);
@@ -536,6 +666,9 @@ function readConfigForm() {
     base_url: $("llmBaseUrl")?.value.trim() || "",
     model: $("llmModel")?.value.trim() || "",
     api_key: state.pendingApiKey || (inputValue === MASKED_KEY ? "" : inputValue),
+    max_chat_chars: clampInt($("maxChatChars")?.value, 60000, 4000, 200000),
+    retry_chat_chars: clampInt($("retryChatChars")?.value, 24000, 2000, 120000),
+    max_output_tokens: clampInt($("maxOutputTokens")?.value, 12288, 256, 32768),
   };
 }
 
@@ -599,39 +732,112 @@ function maskApiKeyFromPaste(event) {
 
 async function loadContacts() {
   log("开始读取联系人：检查环境、解密并扫描微信");
-  if ($("contactSummary")) $("contactSummary").textContent = "正在读取联系人...";
-  const data = await api("/api/discover", { method: "POST" });
-  renderStatus(data.status);
-  state.contacts = data.contacts || [];
-  state.selected = null;
-  if ($("reportBtn")) $("reportBtn").disabled = true;
-  renderContacts();
-  switchPane("main");
-  if ($("contactSummary")) $("contactSummary").textContent = `已读取 ${state.contacts.length} 个联系人。`;
-  log(`读取到 ${state.contacts.length} 个联系人`);
+  state.discoverProgressLines = [];
+  refreshLogView();
+  updateReadContactProgress({ running: true, step: 0, step_total: 3 });
+  const wrap = $("consoleWrap");
+  if (wrap) wrap.classList.add("expanded");
+  if ($("contactSummary")) $("contactSummary").textContent = "正在读取联系人（下方显示步骤进度）…";
+  const poll = window.setInterval(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/discover/progress`);
+      if (!res.ok) return;
+      const j = await res.json();
+      state.discoverProgressLines = j.lines || [];
+      refreshLogView();
+      updateReadContactProgress(j);
+      if ($("logLatest") && (j.phase || j.running)) {
+        $("logLatest").textContent = j.phase || "进行中…";
+      }
+    } catch (_) {}
+  }, 350);
+  try {
+    const data = await api("/api/discover", { method: "POST" });
+    renderStatus(data.status);
+    state.contacts = data.contacts || [];
+    state.selected = null;
+    resetRangeState();
+    if ($("reportBtn")) $("reportBtn").disabled = true;
+    renderContacts();
+    switchPane("main");
+    if ($("contactSummary")) $("contactSummary").textContent = `已读取 ${state.contacts.length} 个联系人。`;
+    log(`读取到 ${state.contacts.length} 个联系人`);
+  } finally {
+    window.clearInterval(poll);
+    updateReadContactProgress({ running: false });
+    try {
+      const res = await fetch(`${API_BASE}/api/discover/progress`);
+      if (res.ok) {
+        const j = await res.json();
+        state.discoverProgressLines = j.lines || [];
+        refreshLogView();
+      }
+    } catch (_) {}
+  }
 }
 
 async function discoverWechat() {
   log("开始识别微信：检查环境、解密数据库、扫描联系人");
-  const data = await api("/api/discover", { method: "POST" });
-  renderStatus(data.status);
-  state.contacts = data.contacts || [];
-  state.selected = null;
-  if ($("reportBtn")) $("reportBtn").disabled = true;
-  renderContacts();
-  switchPane("main");
-  log(`微信识别完成，读取到 ${state.contacts.length} 个联系人`);
+  state.discoverProgressLines = [];
+  refreshLogView();
+  updateReadContactProgress({ running: true, step: 0, step_total: 3 });
+  const poll = window.setInterval(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/discover/progress`);
+      if (!res.ok) return;
+      const j = await res.json();
+      state.discoverProgressLines = j.lines || [];
+      refreshLogView();
+      updateReadContactProgress(j);
+      if ($("logLatest") && (j.phase || j.running)) $("logLatest").textContent = j.phase || "进行中…";
+    } catch (_) {}
+  }, 350);
+  try {
+    const data = await api("/api/discover", { method: "POST" });
+    renderStatus(data.status);
+    state.contacts = data.contacts || [];
+    state.selected = null;
+    resetRangeState();
+    if ($("reportBtn")) $("reportBtn").disabled = true;
+    renderContacts();
+    switchPane("main");
+    log(`微信识别完成，读取到 ${state.contacts.length} 个联系人`);
+  } finally {
+    window.clearInterval(poll);
+    updateReadContactProgress({ running: false });
+    try {
+      const res = await fetch(`${API_BASE}/api/discover/progress`);
+      if (res.ok) {
+        const j = await res.json();
+        state.discoverProgressLines = j.lines || [];
+        refreshLogView();
+      }
+    } catch (_) {}
+  }
 }
 
 async function extractAndStats(onProgress) {
   if (!state.selected) return;
-  const contact = state.selected.display_name || state.selected.username;
-  log(`提取联系人：${contact}`);
-  onProgress?.(18, "正在提取聊天记录");
-  const extracted = await api("/api/extract", { method: "POST", body: { contact } });
+  const username = state.selected.username || "";
+  const contact = state.selected.display_name || username;
+  if (!username) return;
+  if (state.messagesReadyContact !== username) {
+    log(`提取联系人：${contact}`);
+    onProgress?.(18, "正在提取聊天记录");
+    const extracted = await api("/api/extract", { method: "POST", body: { contact } });
+    log("消息提取完成", extracted.result.json || extracted.result.stderr);
+    state.messagesReadyContact = username;
+    const daily = await api("/api/messages/daily");
+    applyDailyData(daily);
+  } else {
+    log("复用已提取聊天记录");
+    onProgress?.(22, "复用已提取聊天记录");
+  }
   onProgress?.(38, "正在计算互动统计");
-  log("消息提取完成", extracted.result.json || extracted.result.stderr);
-  const stats = await api("/api/stats", { method: "POST" });
+  const statsBody = {};
+  if (state.dateFrom) statsBody.date_from = state.dateFrom;
+  if (state.dateTo) statsBody.date_to = state.dateTo;
+  const stats = await api("/api/stats", { method: "POST", body: statsBody });
   onProgress?.(52, "互动统计完成");
   log("统计完成", stats.stats.scores || stats.result.stdout);
 }
@@ -985,6 +1191,9 @@ function bind() {
   on("llmProvider", "change", (event) => applyProviderDefaults(event.target.value));
   on("llmBaseUrl", "input", updateEndpointPreview);
   on("llmModel", "input", updateEndpointPreview);
+  on("maxChatChars", "input", updateEndpointPreview);
+  on("retryChatChars", "input", updateEndpointPreview);
+  on("maxOutputTokens", "input", updateEndpointPreview);
   on("llmApiKey", "paste", maskApiKeyFromPaste);
   on("llmApiKey", "input", () => {
     if ($("llmApiKey")?.value !== MASKED_KEY) state.pendingApiKey = "";
@@ -1005,25 +1214,54 @@ function bind() {
   });
   on("clearLog", "click", () => {
     state.logs = [];
+    state.discoverProgressLines = [];
     $("log").textContent = "";
     $("logLatest").textContent = "日志已清空。";
   });
   on("contactSearch", "input", renderContacts);
-  on("contactList", "click", (event) => {
+  on("rangeStart", "change", () => {
+    const start = $("rangeStart")?.value || "";
+    const end = $("rangeEnd")?.value || "";
+    state.dateFrom = start;
+    if (start && end && start > end) {
+      state.dateTo = start;
+      if ($("rangeEnd")) $("rangeEnd").value = start;
+    }
+    updateRangeSummary();
+  });
+  on("rangeEnd", "change", () => {
+    const start = $("rangeStart")?.value || "";
+    const end = $("rangeEnd")?.value || "";
+    state.dateTo = end;
+    if (start && end && start > end) {
+      state.dateFrom = end;
+      if ($("rangeStart")) $("rangeStart").value = end;
+    }
+    updateRangeSummary();
+  });
+  on("contactList", "click", async (event) => {
     const button = event.target.closest(".contact");
     if (!button) return;
     state.selected = state.filtered[Number(button.dataset.index)];
+    state.messagesReadyContact = "";
     if ($("reportBtn")) $("reportBtn").disabled = false;
     if ($("selectedHint")) {
       const label = state.selected.display_name || state.selected.username;
       $("selectedHint").textContent = `将分析：${label}`;
     }
     renderContacts();
+    try {
+      await ensureSelectedMessagesAndDaily(true);
+      updateRangeSummary();
+    } catch (error) {
+      handleError(error);
+    }
   });
   document.querySelectorAll(".theme-choice").forEach((button) => {
     button.addEventListener("click", () => applyUiTheme(button.dataset.theme));
   });
   renderQuiz();
+  resetRangeState();
   initReveals();
   initHeroSlides();
   initCursorParticles();

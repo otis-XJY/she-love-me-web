@@ -80,12 +80,18 @@ def install_dependencies():
     return {"changed": True, "message": "依赖安装完成"}
 
 
+def _line_suggests_wechat_process(line: str) -> bool:
+    """Windows 微信 4.x 主进程为 Weixin.exe（不含字面 wechat）；需与 wechat-decrypt 一致。"""
+    s = line.lower()
+    return "wechat" in s or "weixin" in s
+
+
 def check_wechat_process():
     if sys.platform == "win32":
         result = run_command(["tasklist"])
         if result.returncode != 0:
             return False, [], "无法执行 tasklist 检查微信进程"
-        matches = [line.strip() for line in result.stdout.splitlines() if "wechat" in line.lower()]
+        matches = [line.strip() for line in result.stdout.splitlines() if _line_suggests_wechat_process(line)]
         return bool(matches), matches[:10], ""
 
     if sys.platform == "darwin":

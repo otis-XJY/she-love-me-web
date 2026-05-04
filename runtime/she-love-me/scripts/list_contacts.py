@@ -52,9 +52,19 @@ def load_contacts(decrypted_dir):
     contacts = []
     conn = open_checked_db(contact_db)
     try:
-        rows = conn.execute(
-            "SELECT username, nick_name, remark FROM contact WHERE username NOT LIKE '%@chatroom'"
-        ).fetchall()
+        try:
+            rows = conn.execute(
+                "SELECT username, nick_name, remark FROM contact WHERE username NOT LIKE '%@chatroom'"
+            ).fetchall()
+        except sqlite3.OperationalError as exc:
+            json_error(
+                "联系人数据库表结构与当前工具预期不一致，常见于微信大版本升级后。请更新 "
+                "runtime/she-love-me/vendor/wechat-decrypt（或重新运行「环境检查」以拉取最新解密工具）；"
+                "若仍失败，请在 issue 中附上微信版本与完整报错。",
+                code="CONTACT_SCHEMA_MISMATCH",
+                detail=str(exc),
+            )
+            sys.exit(2)
         for row in rows:
             username, nick_name, remark = row
             display = remark or nick_name or username
@@ -71,6 +81,8 @@ def load_contacts(decrypted_dir):
     finally:
         conn.close()
 
+    print(f"[进度] 通讯录已载入 {len(contacts)} 人（待统计各消息库中的条数）", file=sys.stderr, flush=True)
+
     return contacts
 
 
@@ -78,7 +90,11 @@ def count_messages(decrypted_dir, contacts):
     """扫描 message/message_N.db 文件，统计每个联系人的消息数"""
     username_to_idx = {c["username"]: i for i, c in enumerate(contacts)}
     msg_dir = os.path.join(decrypted_dir, "message")
+    total_contacts = len(contacts)
+    if total_contacts == 0:
+        return
     if not os.path.exists(msg_dir):
+        print(f"[进度] 联系人 0/{total_contacts}", file=sys.stderr, flush=True)
         return
 
     msg_dbs = sorted([
@@ -86,25 +102,29 @@ def count_messages(decrypted_dir, contacts):
         if re.match(r"message_\d+\.db$", f)
     ])
 
-    for db_file in msg_dbs:
+    print(f"[进度] 联系人 0/{total_contacts}", file=sys.stderr, flush=True)
+
+    for db_idx, db_file in enumerate(msg_dbs, start=1):
         db_path = os.path.join(msg_dir, db_file)
         try:
             conn = sqlite3.connect(f"file:{db_path}?mode=ro", uri=True)
+        except Exception:
+            with_msg = sum(1 for c in contacts if c.get("message_count", 0) > 0)
+            print(f"[进度] 联系人 {with_msg}/{total_contacts}", file=sys.stderr, flush=True)
+            continue
+        try:
             try:
-                try:
-                    checked = conn.execute("PRAGMA quick_check").fetchone()
-                    if not checked or str(checked[0]).lower() != "ok":
-                        print(f"[!] 跳过损坏消息库: {db_path}", file=sys.stderr)
-                        continue
-                except sqlite3.DatabaseError:
-                    print(f"[!] 跳过损坏消息库: {db_path}", file=sys.stderr)
-                    continue
-                # 通过 Name2Id 表找到 username -> table 的对应关系
+                checked = conn.execute("PRAGMA quick_check").fetchone()
+                db_ok = bool(checked and str(checked[0]).lower() == "ok")
+            except sqlite3.DatabaseError:
+                db_ok = False
+            if not db_ok:
+                print(f"[!] 跳过损坏消息库: {db_path}", file=sys.stderr)
+            else:
                 try:
                     id_rows = conn.execute("SELECT user_name FROM Name2Id").fetchall()
                 except sqlite3.OperationalError:
-                    continue
-
+                    id_rows = []
                 for (user_name,) in id_rows:
                     if not user_name or user_name not in username_to_idx:
                         continue
@@ -115,10 +135,10 @@ def count_messages(decrypted_dir, contacts):
                         contacts[username_to_idx[user_name]]["message_count"] += count
                     except sqlite3.OperationalError:
                         pass
-            finally:
-                conn.close()
-        except Exception:
-            continue
+        finally:
+            conn.close()
+        with_msg = sum(1 for c in contacts if c.get("message_count", 0) > 0)
+        print(f"[进度] 联系人 {with_msg}/{total_contacts}", file=sys.stderr, flush=True)
 
 
 def main():
@@ -143,6 +163,16 @@ def main():
         sys.exit(1)
 
     count_messages(decrypted_dir, contacts)
+
+    with_msg = [c for c in contacts if c["message_count"] > 0]
+    print(f"[进度] 统计完成：{len(with_msg)} 个联系人有消息记录", file=sys.stderr, flush=True)
+    top_preview = sorted(with_msg, key=lambda c: c["message_count"], reverse=True)[:15]
+    for i, c in enumerate(top_preview, 1):
+        print(
+            f"[进度] Top {i}: {c['display_name']} · {c['message_count']} 条",
+            file=sys.stderr,
+            flush=True,
+        )
 
     # 按消息数量排序，过滤掉 0 消息的
     contacts = [c for c in contacts if c["message_count"] > 0]

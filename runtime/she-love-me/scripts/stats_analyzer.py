@@ -397,6 +397,8 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--input", required=True)
     parser.add_argument("--output", required=True)
+    parser.add_argument("--date-start", default="")
+    parser.add_argument("--date-end", default="")
     args = parser.parse_args()
 
     data = load_messages(args.input)
@@ -407,8 +409,41 @@ def main():
         print(json.dumps({"error": "没有消息"}))
         sys.exit(1)
 
+    date_start_arg = str(args.date_start or "").strip()
+    date_end_arg = str(args.date_end or "").strip()
+    date_start_dt = None
+    date_end_dt = None
+    if date_start_arg:
+        try:
+            date_start_dt = datetime.strptime(date_start_arg, "%Y-%m-%d").date()
+        except ValueError:
+            print(json.dumps({"error": "date_start 格式必须是 YYYY-MM-DD"}))
+            sys.exit(1)
+    if date_end_arg:
+        try:
+            date_end_dt = datetime.strptime(date_end_arg, "%Y-%m-%d").date()
+        except ValueError:
+            print(json.dumps({"error": "date_end 格式必须是 YYYY-MM-DD"}))
+            sys.exit(1)
+    if date_start_dt and date_end_dt and date_start_dt > date_end_dt:
+        print(json.dumps({"error": "date_start 不能晚于 date_end"}))
+        sys.exit(1)
+
     # 只分析 me/them 的消息
     valid = [m for m in messages if m["sender"] in ("me", "them")]
+    if date_start_dt or date_end_dt:
+        filtered = []
+        for m in valid:
+            day = datetime.fromtimestamp(m["timestamp"]).date()
+            if date_start_dt and day < date_start_dt:
+                continue
+            if date_end_dt and day > date_end_dt:
+                continue
+            filtered.append(m)
+        valid = filtered
+    if not valid:
+        print(json.dumps({"error": "所选时间范围内没有消息"}))
+        sys.exit(1)
     text_msgs = filter_text_messages(valid)
 
     my_msgs = [m for m in valid if m["sender"] == "me"]

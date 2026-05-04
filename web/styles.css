@@ -733,6 +733,14 @@ body.hero-leaving .pane.visible {
   font-weight: 800;
 }
 
+.read-contact-progress {
+  margin-top: 12px;
+  margin-bottom: 0;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--accent-strong) 92%, var(--muted));
+  letter-spacing: .04em;
+}
+
 .actions {
   display: flex;
   flex-wrap: wrap;
@@ -884,6 +892,50 @@ select:focus {
   border: 1px solid var(--line);
   padding: 18px;
   color: var(--ink-soft);
+}
+
+.range-panel {
+  margin-top: 14px;
+  padding-top: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.range-panel h4 {
+  margin: 0 0 8px;
+}
+
+.range-grid {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.range-grid label {
+  display: grid;
+  gap: 6px;
+}
+
+.daily-list {
+  margin-top: 10px;
+  max-height: 180px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  background: color-mix(in srgb, var(--panel-strong) 72%, transparent);
+  padding: 10px;
+}
+
+.daily-row {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+  padding: 6px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+  font-size: 13px;
+}
+
+.daily-row:last-child {
+  border-bottom: 0;
 }
 
 .switch {
@@ -1245,6 +1297,20 @@ select:focus {
   margin-top: 18px;
 }
 
+.analysis-config-panel {
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+}
+
+.analysis-config-panel h4 {
+  margin: 0 0 8px;
+}
+
+.analysis-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .config-grid {
   display: grid;
   grid-template-columns: minmax(140px, .7fr) minmax(220px, 1.2fr) minmax(160px, .8fr);
@@ -1286,6 +1352,14 @@ select:focus {
   margin-top: 12px;
   color: var(--muted);
   font-size: 13px;
+}
+
+.config-note {
+  margin-top: 10px;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
+  max-width: 52ch;
 }
 
 .config-test {
@@ -1448,8 +1522,10 @@ select:focus {
   }
   .contact-toolbar,
   .contact-list,
+  .range-grid,
   .quiz-grid,
   .config-grid,
+  .analysis-grid,
   .theme-grid {
     grid-template-columns: 1fr;
   }

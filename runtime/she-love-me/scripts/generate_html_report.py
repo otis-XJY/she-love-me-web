@@ -820,6 +820,24 @@ def render_html(stats, analysis, contact_name):
     date_str = datetime.now().strftime("%Y.%m.%d")
     report_tone = classify_report_tone(analysis, stats)
 
+    llm_fallback_banner = ""
+    if analysis.get("_analysis_mode") in ("heuristic_fallback", "llm_merged_heuristic"):
+        note = analysis.get("_user_notice") or "大模型未参与本次结论：以下为基于本地统计的占位分析。"
+        reason = (analysis.get("_llm_failure_reason") or "").strip()
+        reason_para = ""
+        if reason:
+            clip = reason[:800] + ("…" if len(reason) > 800 else "")
+            reason_para = f'<p class="ta-empty" style="color: var(--ta-muted); font-size: 0.88em; margin-top: 12px;">接口返回摘要（便于对照设置页「连通性」）：{escape_html(clip)}</p>'
+        llm_fallback_banner = f'''
+  <section class="ta-section" style="margin-top:0;padding-top:0;">
+    <div class="ta-panel" style="border-color: rgba(255,138,22,.35); background: rgba(255,138,22,.06);">
+      <p class="ta-kicker" style="margin-bottom:8px;">模型调用说明</p>
+      <p class="ta-empty" style="color: var(--ta-soft);">{escape_html(note)}</p>
+      {reason_para}
+    </div>
+  </section>
+'''
+
     metrics = [
         ("消息占比", f"{my_ratio}%", f"你 · 对方 {their_ratio}%"),
         ("主动发起", f"{initiative.get('my_starts', 0)} 次", f"对方 {initiative.get('their_starts', 0)} 次"),
@@ -978,6 +996,7 @@ def render_html(stats, analysis, contact_name):
 </head>
 <body class="report-tone-{report_tone}">
 <article class="ta-report">
+{llm_fallback_banner}
   <section class="ta-summary">
     <div>
       <p class="ta-kicker">I. 结论</p>

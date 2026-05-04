@@ -80,12 +80,12 @@ def run_macos_flow():
             )
 
     print("[*] 开始解密全部数据库...")
-    run_command([sys.executable, "decrypt_db.py"], cwd=DECRYPTOR_DIR)
+    run_command([sys.executable, "-u", "decrypt_db.py"], cwd=DECRYPTOR_DIR)
 
 
 def run_default_flow():
     print("[*] 调用 wechat-decrypt 主流程...")
-    run_command([sys.executable, "main.py", "decrypt"], cwd=DECRYPTOR_DIR)
+    run_command([sys.executable, "-u", "main.py", "decrypt"], cwd=DECRYPTOR_DIR)
 
 
 def main():

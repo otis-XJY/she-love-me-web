@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TA回我了 - 微信恋爱分析</title>
-  <link rel="stylesheet" href="styles.css?v=20260425-5">
+  <link rel="stylesheet" href="styles.css?v=20260504-5">
 </head>
 <body>
   <header class="top-nav">
@@ -49,6 +49,7 @@
               <div class="actions">
                 <button class="primary" id="loadContactsBtn">开始读取联系人</button>
               </div>
+              <p class="flow-hint read-contact-progress" id="readContactProgress" hidden aria-live="polite"></p>
               <p class="flow-hint" id="contactSummary">尚未读取联系人。</p>
             </div>
 
@@ -59,8 +60,27 @@
                   <span>搜索联系人</span>
                   <input id="contactSearch" type="search" placeholder="输入姓名或微信号">
                 </label>
+                <button type="button" class="secondary contact-picker-trigger" id="openContactPickerBtn" disabled title="在弹出窗口中选择联系人">窗口选择</button>
               </div>
               <div class="contact-list compact" id="contactList"></div>
+              <div class="range-panel" id="rangePanel">
+                <h4>时间范围</h4>
+                <p class="flow-copy" id="rangeHint">选择联系人后可按日期筛选，并查看每天聊天条数。</p>
+                <div class="range-grid">
+                  <label>
+                    <span>开始日期</span>
+                    <input id="rangeStart" type="date" disabled>
+                  </label>
+                  <label>
+                    <span>结束日期</span>
+                    <input id="rangeEnd" type="date" disabled>
+                  </label>
+                </div>
+                <p class="flow-hint" id="rangeTotal">所选范围消息总数：-</p>
+                <div class="daily-list" id="dailyList">
+                  <div class="contact-empty">选择联系人后显示每日聊天条数。</div>
+                </div>
+              </div>
             </div>
 
             <div class="workflow-card report-card">
@@ -149,8 +169,27 @@
               <span>最终请求地址</span>
               <code id="llmEndpoint">-</code>
             </div>
+            <p class="config-note">连通性测试只验证最小请求能否返回；生成报告会发送长聊天记录，仍可能因风控、超时或返回非 JSON 而失败（详见 README「连通性测试 ≠ 完整分析报告」）。</p>
             <p class="config-test" id="configTestResult">尚未测试连通性。</p>
             <p class="config-hint" id="configHint">尚未读取模型配置。</p>
+            <div class="analysis-config-panel">
+              <h4>分析参数</h4>
+              <p>这些参数同样会保存在本机配置中。若设置了同名环境变量，则环境变量优先。</p>
+              <div class="config-grid analysis-grid">
+                <label>
+                  <span>聊天文本最大字符数</span>
+                  <input id="maxChatChars" type="number" min="4000" max="200000" step="1000" placeholder="60000">
+                </label>
+                <label>
+                  <span>重试聊天字符数</span>
+                  <input id="retryChatChars" type="number" min="2000" max="120000" step="1000" placeholder="24000">
+                </label>
+                <label>
+                  <span>模型回复最大 Token</span>
+                  <input id="maxOutputTokens" type="number" min="256" max="32768" step="256" placeholder="12288">
+                </label>
+              </div>
+            </div>
           </section>
           <section class="theme-panel">
             <h4>颜色风格</h4>
@@ -179,6 +218,6 @@
     <a href="https://github.com/Exekiel179/she-love-me-web" target="_blank" rel="noreferrer">github.com/Exekiel179/she-love-me-web</a>
   </footer>
 
-  <script src="app.js?v=20260425-5"></script>
+  <script src="app.js?v=20260504-6"></script>
 </body>
 </html>

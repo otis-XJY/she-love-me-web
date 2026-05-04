@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import traceback
 import urllib.error
 import urllib.parse
@@ -15,7 +16,7 @@ import time
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -52,7 +53,211 @@ LLM_HTTP_HEADERS = {
 }
 DEFAULT_MAX_CHAT_CHARS = int(os.environ.get("SHE_LOVE_ME_MAX_CHAT_CHARS", "60000"))
 RETRY_MAX_CHAT_CHARS = int(os.environ.get("SHE_LOVE_ME_RETRY_CHAT_CHARS", "24000"))
-LLM_MAX_OUTPUT_TOKENS = int(os.environ.get("SHE_LOVE_ME_LLM_MAX_OUTPUT_TOKENS", "1800"))
+# 默认需偏大：MiMo 等会把「思考」写在 reasoning_content，JSON 在后；过小会出现 finish_reason=length 且无法解析。
+LLM_MAX_OUTPUT_TOKENS = int(os.environ.get("SHE_LOVE_ME_LLM_MAX_OUTPUT_TOKENS", "12288"))
+ANALYSIS_CONFIG: dict[str, int] = {
+    "max_chat_chars": DEFAULT_MAX_CHAT_CHARS,
+    "retry_chat_chars": RETRY_MAX_CHAT_CHARS,
+    "max_output_tokens": LLM_MAX_OUTPUT_TOKENS,
+}
+
+
+def parse_int_config(payload: dict[str, Any], key: str, minimum: int, maximum: int, default: int) -> int:
+    raw = payload.get(key, default)
+    try:
+        value = int(str(raw).strip())
+    except (TypeError, ValueError):
+        raise AppError(f"{key} 必须是整数")
+    if value < minimum or value > maximum:
+        raise AppError(f"{key} 必须在 {minimum} 到 {maximum} 之间")
+    return value
+
+
+def get_max_chat_chars() -> int:
+    raw = os.environ.get("SHE_LOVE_ME_MAX_CHAT_CHARS")
+    if raw:
+        try:
+            return max(4000, min(int(raw), 200000))
+        except ValueError:
+            pass
+    return max(4000, ANALYSIS_CONFIG.get("max_chat_chars", DEFAULT_MAX_CHAT_CHARS))
+
+
+def get_retry_chat_chars() -> int:
+    raw = os.environ.get("SHE_LOVE_ME_RETRY_CHAT_CHARS")
+    if raw:
+        try:
+            return max(2000, min(int(raw), 120000))
+        except ValueError:
+            pass
+    return max(2000, ANALYSIS_CONFIG.get("retry_chat_chars", RETRY_MAX_CHAT_CHARS))
+
+
+def get_max_output_tokens() -> int:
+    raw = os.environ.get("SHE_LOVE_ME_LLM_MAX_OUTPUT_TOKENS")
+    if raw:
+        try:
+            return max(256, min(int(raw), 32768))
+        except ValueError:
+            pass
+    return max(256, ANALYSIS_CONFIG.get("max_output_tokens", LLM_MAX_OUTPUT_TOKENS))
+
+
+def llm_debug_enabled() -> bool:
+    return os.environ.get("SHE_LOVE_ME_LLM_DEBUG", "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def llm_debug_line(msg: str) -> None:
+    sys.stderr.write(f"[LLM-DEBUG] {msg}\n")
+    sys.stderr.flush()
+
+
+def llm_debug_dump_openai_request(url: str, model: str, attempt: int, use_json_object: bool, pl: dict[str, Any]) -> None:
+    """完整 prompt 写入 data/，终端输出摘要（避免几万字刷屏）。"""
+    try:
+        DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+    user_text = ""
+    system_text = ""
+    for m in pl.get("messages") or []:
+        if not isinstance(m, dict):
+            continue
+        role = m.get("role")
+        c = str(m.get("content") or "")
+        if role == "user":
+            user_text = c
+        elif role == "system":
+            system_text = c
+    (DATA_ROOT / "last_llm_user_prompt.txt").write_text(user_text, encoding="utf-8")
+    (DATA_ROOT / "last_llm_system_prompt.txt").write_text(system_text, encoding="utf-8")
+    meta = {
+        "url": url,
+        "model": model,
+        "attempt": attempt,
+        "response_format_json_object": use_json_object,
+        "temperature": pl.get("temperature"),
+        "max_tokens": pl.get("max_tokens"),
+        "user_prompt_chars": len(user_text),
+        "system_prompt_chars": len(system_text),
+        "request_json_approx_bytes": len(json.dumps(pl, ensure_ascii=False).encode("utf-8")),
+    }
+    (DATA_ROOT / "last_llm_request_meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    llm_debug_line("========== LLM 请求（OpenAI 兼容）==========")
+    llm_debug_line(f"POST {url}")
+    llm_debug_line(f"model={model!r}  attempt={attempt}  response_format json_object={use_json_object}")
+    llm_debug_line(f"user 消息 {len(user_text)} 字符 → {DATA_ROOT / 'last_llm_user_prompt.txt'}")
+    llm_debug_line(f"system {len(system_text)} 字符 → {DATA_ROOT / 'last_llm_system_prompt.txt'}")
+    llm_debug_line(f"meta → {DATA_ROOT / 'last_llm_request_meta.json'}")
+    head = user_text[:1500].replace("\r", "")
+    llm_debug_line("----- user 开头 1500 字符 -----")
+    llm_debug_line(head)
+    if len(user_text) > 1500:
+        tail = user_text[-900:].replace("\r", "")
+        llm_debug_line("----- user 结尾 900 字符 -----")
+        llm_debug_line(tail)
+
+
+def llm_debug_dump_openai_response(http_status: int, body: dict[str, Any]) -> None:
+    try:
+        DATA_ROOT.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        return
+    raw = json.dumps(body, ensure_ascii=False, indent=2)
+    path = DATA_ROOT / "last_llm_response_body.json"
+    path.write_text(raw, encoding="utf-8")
+    llm_debug_line(f"HTTP {http_status}；响应 JSON {len(raw)} 字符 → {path}")
+    ch0 = (body.get("choices") or [{}])[0] if isinstance(body.get("choices"), list) else {}
+    fr = ch0.get("finish_reason") if isinstance(ch0, dict) else None
+    msg = (ch0.get("message") if isinstance(ch0, dict) else None) or {}
+    llm_debug_line(f"choices[0].finish_reason={fr!r}  message.keys={list(msg.keys()) if isinstance(msg, dict) else []}")
+    if isinstance(msg, dict):
+        for key in ("content", "reasoning_content", "reasoning", "thinking"):
+            v = msg.get(key)
+            if isinstance(v, str) and v.strip():
+                llm_debug_line(f"message[{key}] len={len(v)} head={repr(v[:320])}")
+
+
+DISCOVER_PROGRESS: list[str] = []
+DISCOVER_PROGRESS_LOCK = threading.Lock()
+MAX_DISCOVER_LINES = 800
+DISCOVER_ACTIVE = False
+DISCOVER_PHASE = ""
+DISCOVER_STEP = 0
+DISCOVER_STEP_TOTAL = 3
+
+# 分析报告用语：本地启发式 vs 大模型无依据
+LOCAL_ANALYSIS_LABEL = "本地化运行，未使用大模型"
+LLM_NO_SOURCE_LABEL = "没有相关的原文，大模型无法判断"
+LLM_SCHEMA_FILL_HINT = "（请根据聊天记录归纳结论；若无依据请填写：没有相关的原文，大模型无法判断）"
+
+
+def clear_discover_progress() -> None:
+    global DISCOVER_PHASE, DISCOVER_STEP
+    with DISCOVER_PROGRESS_LOCK:
+        DISCOVER_PROGRESS.clear()
+        DISCOVER_PHASE = ""
+        DISCOVER_STEP = 0
+
+
+def set_discover_step(step: int) -> None:
+    global DISCOVER_STEP
+    with DISCOVER_PROGRESS_LOCK:
+        DISCOVER_STEP = step
+
+
+def set_discover_phase(phase: str) -> None:
+    global DISCOVER_PHASE
+    with DISCOVER_PROGRESS_LOCK:
+        DISCOVER_PHASE = phase
+
+
+def append_discover_line(text: str) -> None:
+    stamp = datetime.now().strftime("%H:%M:%S")
+    line = f"[{stamp}] {text}".strip()
+    with DISCOVER_PROGRESS_LOCK:
+        DISCOVER_PROGRESS.append(line)
+        while len(DISCOVER_PROGRESS) > MAX_DISCOVER_LINES:
+            DISCOVER_PROGRESS.pop(0)
+
+
+def _parse_contact_progress(lines: list[str]) -> tuple[int | None, int | None]:
+    """解析「联系人 x/X」；X 亦可来自「通讯录已载入 N 人」（尚未开始统计时显示 0/N）。"""
+    pat_contact = re.compile(r"联系人\s*(\d+)/(\d+)")
+    pat_roster = re.compile(r"通讯录已载入\s*(\d+)\s*人")
+    cur = None
+    tot = None
+    roster_total = None
+    for line in reversed(lines):
+        m = pat_contact.search(line)
+        if m:
+            cur, tot = int(m.group(1)), int(m.group(2))
+            break
+    for line in lines:
+        m = pat_roster.search(line)
+        if m:
+            roster_total = int(m.group(1))
+            break
+    if tot is None and roster_total is not None:
+        tot = roster_total
+    if cur is None and tot is not None:
+        cur = 0
+    return cur, tot
+
+
+def get_discover_progress() -> dict[str, Any]:
+    with DISCOVER_PROGRESS_LOCK:
+        lines = list(DISCOVER_PROGRESS)
+        c_cur, c_tot = _parse_contact_progress(lines)
+        return {
+            "running": DISCOVER_ACTIVE,
+            "phase": DISCOVER_PHASE,
+            "step": DISCOVER_STEP,
+            "step_total": DISCOVER_STEP_TOTAL,
+            "contact_current": c_cur,
+            "contact_total": c_tot,
+            "lines": lines,
+        }
 
 
 def load_local_config() -> None:
@@ -75,6 +280,20 @@ def load_local_config() -> None:
                 LLM_CONFIG[key] = value
         if LLM_CONFIG.get("provider") not in PROVIDER_DEFAULTS:
             LLM_CONFIG["provider"] = "openai"
+        limits = data.get("analysis", {}) if isinstance(data, dict) else {}
+        if isinstance(limits, dict):
+            if not os.environ.get("SHE_LOVE_ME_MAX_CHAT_CHARS"):
+                ANALYSIS_CONFIG["max_chat_chars"] = parse_int_config(
+                    limits, "max_chat_chars", 4000, 200000, DEFAULT_MAX_CHAT_CHARS
+                )
+            if not os.environ.get("SHE_LOVE_ME_RETRY_CHAT_CHARS"):
+                ANALYSIS_CONFIG["retry_chat_chars"] = parse_int_config(
+                    limits, "retry_chat_chars", 2000, 120000, RETRY_MAX_CHAT_CHARS
+                )
+            if not os.environ.get("SHE_LOVE_ME_LLM_MAX_OUTPUT_TOKENS"):
+                ANALYSIS_CONFIG["max_output_tokens"] = parse_int_config(
+                    limits, "max_output_tokens", 256, 32768, LLM_MAX_OUTPUT_TOKENS
+                )
     except Exception:
         return
 
@@ -88,6 +307,11 @@ def save_local_config() -> None:
             "base_url": LLM_CONFIG.get("base_url", ""),
             "model": LLM_CONFIG.get("model", ""),
             "api_key": LLM_CONFIG.get("api_key", ""),
+        },
+        "analysis": {
+            "max_chat_chars": get_max_chat_chars(),
+            "retry_chat_chars": get_retry_chat_chars(),
+            "max_output_tokens": get_max_output_tokens(),
         },
     }
     temp_path = LOCAL_CONFIG_FILE.with_suffix(".tmp")
@@ -150,6 +374,74 @@ def run_script(name: str, args: list[str], timeout: int = 900) -> dict[str, Any]
     return result
 
 
+def run_script_streaming(name: str, args: list[str], timeout: int = 900, step: str = "") -> dict[str, Any]:
+    """流式执行脚本：将 stdout/stderr 按行写入 DISCOVER_PROGRESS；返回结果与 run_script 相同。"""
+    ensure_dirs()
+    cmd = [sys.executable, "-u", str(script_path(name)), *args]
+    prefix = step.strip()
+    if prefix:
+        prefix = prefix + " "
+    stdout_buf: list[str] = []
+    stderr_buf: list[str] = []
+
+    proc = subprocess.Popen(
+        cmd,
+        cwd=str(RUNTIME_ROOT),
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        bufsize=1,
+    )
+
+    def pump(stream: Any, bucket: list[str], stderr_line: bool) -> None:
+        try:
+            for line in iter(stream.readline, ""):
+                bucket.append(line)
+                body = line.rstrip()
+                if stderr_line:
+                    append_discover_line(f"{prefix}‖ {body}")
+                else:
+                    append_discover_line(f"{prefix}{body}")
+        finally:
+            stream.close()
+
+    t_out = threading.Thread(target=pump, args=(proc.stdout, stdout_buf, False))
+    t_err = threading.Thread(target=pump, args=(proc.stderr, stderr_buf, True))
+    t_out.start()
+    t_err.start()
+    try:
+        rc = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        try:
+            proc.wait(timeout=8)
+        except Exception:
+            pass
+        t_out.join(timeout=5)
+        t_err.join(timeout=5)
+        raise AppError(f"{name} 执行超时（{timeout} 秒）", 504)
+    t_out.join(timeout=120)
+    t_err.join(timeout=120)
+    stdout = "".join(stdout_buf)
+    stderr = "".join(stderr_buf)
+    payload = parse_jsonish(stdout)
+    result = {
+        "command": [Path(cmd[0]).name, name, *args],
+        "returncode": rc,
+        "stdout": stdout,
+        "stderr": stderr,
+        "json": payload,
+    }
+    if rc != 0:
+        message = ""
+        if isinstance(payload, dict):
+            message = str(payload.get("error") or payload.get("message") or "")
+        raise AppError(message or stderr.strip() or stdout.strip() or f"{name} 执行失败", 500, result)
+    return result
+
+
 def parse_jsonish(text: str) -> Any | None:
     text = (text or "").strip()
     if not text:
@@ -167,6 +459,52 @@ def parse_jsonish(text: str) -> Any | None:
             return json.loads(text[start:end])
         except json.JSONDecodeError:
             continue
+    return None
+
+
+def normalize_llm_json_text(content: str) -> str:
+    """去掉 Markdown ```json 围栏，以及首个 `{` 之前的开场白/思维链段落。"""
+    text = (content or "").strip()
+    if not text:
+        return ""
+    fence = re.search(r"```(?:json)?\s*([\s\S]*?)```", text, re.IGNORECASE | re.DOTALL)
+    if fence:
+        text = fence.group(1).strip()
+    # 模型常在 JSON 前输出推理或说明：从第一个 `{` 起截取（parse_llm_json 仍会做括号配对兜底）
+    brace_at = text.find("{")
+    if brace_at > 0:
+        text = text[brace_at:]
+    return text.strip()
+
+
+def extract_json_object_by_brace(text: str) -> str | None:
+    """从首个「顶层」{ 起截取到匹配的 }，避免正文里夹杂说明文字。"""
+    start = text.find("{")
+    if start < 0:
+        return None
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(text)):
+        ch = text[i]
+        if esc:
+            esc = False
+            continue
+        if in_str:
+            if ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+            continue
+        if ch == "{":
+            depth += 1
+        elif ch == "}":
+            depth -= 1
+            if depth == 0:
+                return text[start : i + 1]
     return None
 
 
@@ -304,6 +642,39 @@ def get_contact_name() -> str:
     return "对方"
 
 
+def build_daily_counts_from_messages() -> dict[str, Any]:
+    messages_path = DATA_ROOT / "messages.json"
+    if not messages_path.exists():
+        raise AppError("请先选择联系人并提取聊天记录", 400)
+    data = read_json(messages_path)
+    messages = data.get("messages") if isinstance(data, dict) else None
+    if not isinstance(messages, list):
+        raise AppError("messages.json 格式异常", 500)
+    daily: dict[str, int] = {}
+    total = 0
+    for m in messages:
+        if not isinstance(m, dict):
+            continue
+        sender = m.get("sender")
+        if sender not in ("me", "them"):
+            continue
+        ts = m.get("timestamp")
+        if not isinstance(ts, (int, float)):
+            continue
+        day = datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+        daily[day] = daily.get(day, 0) + 1
+        total += 1
+    rows = [{"date": k, "count": v} for k, v in sorted(daily.items())]
+    return {
+        "contact": data.get("contact_display") or data.get("contact_username") or "对方",
+        "contact_username": data.get("contact_username") or "",
+        "total": total,
+        "min_date": rows[0]["date"] if rows else "",
+        "max_date": rows[-1]["date"] if rows else "",
+        "daily": rows,
+    }
+
+
 def build_status() -> dict[str, Any]:
     llm_key = LLM_CONFIG.get("api_key", "")
     scripts_ready = all((SCRIPTS_ROOT / name).exists() for name in (
@@ -334,6 +705,11 @@ def build_status() -> dict[str, Any]:
         "llm_key_hint": f"已设置 · ****{llm_key[-4:]}" if llm_key else "未设置",
         "llm_config_path": str(LOCAL_CONFIG_FILE),
         "llm_config_persisted": LOCAL_CONFIG_FILE.exists(),
+        "analysis_limits": {
+            "max_chat_chars": get_max_chat_chars(),
+            "retry_chat_chars": get_retry_chat_chars(),
+            "max_output_tokens": get_max_output_tokens(),
+        },
     }
 
 
@@ -360,6 +736,16 @@ def update_llm_config(payload: dict[str, Any]) -> dict[str, str]:
         LLM_CONFIG["model"] = PROVIDER_DEFAULTS[provider]["model"]
     if api_key:
         LLM_CONFIG["api_key"] = api_key
+    limits = payload.get("analysis", {}) if isinstance(payload.get("analysis"), dict) else payload
+    ANALYSIS_CONFIG["max_chat_chars"] = parse_int_config(
+        limits, "max_chat_chars", 4000, 200000, get_max_chat_chars()
+    )
+    ANALYSIS_CONFIG["retry_chat_chars"] = parse_int_config(
+        limits, "retry_chat_chars", 2000, 120000, get_retry_chat_chars()
+    )
+    ANALYSIS_CONFIG["max_output_tokens"] = parse_int_config(
+        limits, "max_output_tokens", 256, 32768, get_max_output_tokens()
+    )
     save_local_config()
 
     return {
@@ -367,6 +753,7 @@ def update_llm_config(payload: dict[str, Any]) -> dict[str, str]:
         "base_url": LLM_CONFIG.get("base_url", ""),
         "model": LLM_CONFIG.get("model", ""),
         "key_hint": build_status()["llm_key_hint"],
+        "analysis_limits": build_status()["analysis_limits"],
     }
 
 
@@ -488,15 +875,55 @@ def test_llm_connection(payload: dict[str, Any]) -> dict[str, Any]:
 
 
 def discover_wechat() -> dict[str, Any]:
-    setup = run_script("setup_check.py", ["--ensure-decryptor"], timeout=1200)
-    decrypt = run_script("decrypt_wechat.py", [], timeout=2400)
-    contacts = run_script("list_contacts.py", ["--decrypted-dir", str(DECRYPTED_ROOT)], timeout=900)
-    return {
-        "setup": setup,
-        "decrypt": decrypt,
-        "contacts": contacts.get("json") or [],
-        "status": build_status(),
-    }
+    global DISCOVER_ACTIVE
+    clear_discover_progress()
+    DISCOVER_ACTIVE = True
+    append_discover_line("开始：1/3 环境检查 → 2/3 解密数据库 → 3/3 扫描联系人")
+    try:
+        try:
+            set_discover_step(1)
+            set_discover_phase("1/3 环境检查")
+            setup = run_script_streaming(
+                "setup_check.py",
+                ["--ensure-decryptor"],
+                timeout=1200,
+                step="[1/3]",
+            )
+        except AppError as exc:
+            raise AppError(f"环境检查失败：{exc}", exc.status, exc.details) from exc
+        try:
+            set_discover_step(2)
+            set_discover_phase("2/3 解密数据库（耗时取决于聊天记录体量）")
+            decrypt = run_script_streaming("decrypt_wechat.py", [], timeout=2400, step="[2/3]")
+        except AppError as exc:
+            raise AppError(
+                f"解密失败（多为管理员权限、微信未登录或微信版本与 wechat-decrypt 不兼容）：{exc}",
+                exc.status,
+                exc.details,
+            ) from exc
+        try:
+            set_discover_step(3)
+            set_discover_phase("3/3 扫描联系人并统计消息数")
+            contacts = run_script_streaming(
+                "list_contacts.py",
+                ["--decrypted-dir", str(DECRYPTED_ROOT)],
+                timeout=900,
+                step="[3/3]",
+            )
+        except AppError as exc:
+            raise AppError(f"读取联系人失败：{exc}", exc.status, exc.details) from exc
+        n = len(contacts.get("json") or [])
+        append_discover_line(f"完成：已生成 {n} 个有消息的联系人条目（按消息数排序）")
+        return {
+            "setup": setup,
+            "decrypt": decrypt,
+            "contacts": contacts.get("json") or [],
+            "status": build_status(),
+        }
+    finally:
+        DISCOVER_ACTIVE = False
+        set_discover_phase("")
+        set_discover_step(0)
 
 
 def summarize_stats(stats: dict[str, Any], contact: str) -> dict[str, Any]:
@@ -568,7 +995,7 @@ def summarize_stats(stats: dict[str, Any], contact: str) -> dict[str, Any]:
             "symmetry_score": symmetry,
             "anchor_person": "me" if my_ratio >= their_ratio else "them",
             "anchor_description": f"消息占比：你 {my_ratio:.1%}，{contact} {their_ratio:.1%}；主动指数 {simp}，被爱指数 {loved}。",
-            "conflict_pattern": "需要结合聊天原文判断。当前版本主要依据主动性、回复速度、冷淡回复和连续发送结构推断。",
+            "conflict_pattern": f"当前为{LOCAL_ANALYSIS_LABEL}；冲突模式需结合具体聊天原文。统计侧主要依据主动性、回复速度、冷淡回复和连续发送结构。",
             "power_dynamics": f"对话发起：你 {initiative.get('my_starts', 0)} 次，对方 {initiative.get('their_starts', 0)} 次。",
             "key_turning_point": {"date": "未定位", "event": "启发式模式未扫描全文转折点。"},
         },
@@ -576,7 +1003,7 @@ def summarize_stats(stats: dict[str, Any], contact: str) -> dict[str, Any]:
             "passion": max(20, min(95, int(loved * 0.7 + linguistic.get("positive_ratio", {}).get("them", 0.5) * 30))),
             "intimacy": max(20, min(95, int((100 - cold) * 0.55 + symmetry * 4))),
             "commitment": max(15, min(90, int(symmetry * 7 + min(goodnight.get("their_goodnight", 0), 10)))),
-            "love_type": "需结合原文确认",
+            "love_type": LOCAL_ANALYSIS_LABEL,
         },
         "gottman": {
             "positive_negative_ratio": round(max(0.5, min(9.9, (100 - cold) / 12)), 1),
@@ -585,18 +1012,18 @@ def summarize_stats(stats: dict[str, Any], contact: str) -> dict[str, Any]:
             "repair_attempts": {
                 "who_initiates": "unknown",
                 "method": "启发式模式未做冲突片段抽取",
-                "partner_response": "需配置模型或人工查看原文",
+                "partner_response": LOCAL_ANALYSIS_LABEL,
                 "success_rate": "未知",
             },
         },
         "personality": {
-            "user_attachment": "需要全文判断",
-            "partner_attachment": "需要全文判断",
+            "user_attachment": LOCAL_ANALYSIS_LABEL,
+            "partner_attachment": LOCAL_ANALYSIS_LABEL,
             "pursue_distance_cycle": simp > loved + 20,
             "user_communication": "统计显示你在主动维系上更明显" if simp >= loved else "互动投入相对均衡",
             "partner_communication": "统计显示对方回应质量需要结合上下文判断",
-            "user_love_language": "待分析",
-            "partner_love_language": "待分析",
+            "user_love_language": LOCAL_ANALYSIS_LABEL,
+            "partner_love_language": LOCAL_ANALYSIS_LABEL,
             "love_language_mismatch": False,
         },
         "personality_portrait": {
@@ -609,21 +1036,21 @@ def summarize_stats(stats: dict[str, Any], contact: str) -> dict[str, Any]:
                 "big_five_sketch": {},
             },
             "partner": {
-                "core_traits": ["需结合原文判断"],
+                "core_traits": [LOCAL_ANALYSIS_LABEL],
                 "defense_mechanisms": [],
-                "core_needs": "需结合原文判断。",
+                "core_needs": LOCAL_ANALYSIS_LABEL,
                 "needs_behavior_map": [],
-                "trust_architecture": "需结合原文判断。",
+                "trust_architecture": LOCAL_ANALYSIS_LABEL,
                 "big_five_sketch": {},
             },
         },
         "language_patterns": {
             "pronoun_we_ratio": f"「我们」次数：你 {linguistic.get('pronoun_we_count', {}).get('me', 0)}，对方 {linguistic.get('pronoun_we_count', {}).get('them', 0)}。",
-            "hedging_density": "需结合原文判断",
-            "future_orientation": "需结合原文判断",
-            "emotional_valence_ratio": "基于词表统计，详细语义需要模型分析。",
-            "conditional_density": "需结合原文判断",
-            "key_linguistic_finding": "当前为本地启发式结果，适合先生成报告框架。",
+            "hedging_density": LOCAL_ANALYSIS_LABEL,
+            "future_orientation": LOCAL_ANALYSIS_LABEL,
+            "emotional_valence_ratio": f"基于词表统计正负倾向；语义层面的细腻判断：{LOCAL_ANALYSIS_LABEL}。",
+            "conditional_density": LOCAL_ANALYSIS_LABEL,
+            "key_linguistic_finding": f"{LOCAL_ANALYSIS_LABEL}（以下为基于统计生成的报告框架）。",
         },
         "danger_warnings": danger_warnings,
         "strategist": {
@@ -646,15 +1073,57 @@ def summarize_stats(stats: dict[str, Any], contact: str) -> dict[str, Any]:
     }
 
 
+def scrub_schema_for_llm_prompt(obj: Any) -> Any:
+    """将本地占位文案换成中性提示，避免模型在 JSON 中照抄「本地化运行…」。"""
+    if isinstance(obj, dict):
+        return {k: scrub_schema_for_llm_prompt(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [scrub_schema_for_llm_prompt(x) for x in obj]
+    if isinstance(obj, str):
+        if obj == LOCAL_ANALYSIS_LABEL or LOCAL_ANALYSIS_LABEL in obj:
+            return LLM_SCHEMA_FILL_HINT
+        if "需结合原文" in obj or "需要全文判断" in obj or "需配置模型" in obj:
+            return LLM_SCHEMA_FILL_HINT
+        if "基于词表统计" in obj and "未使用大模型" in obj:
+            return "（可引用下方统计数据中的词表结果；语义归纳无依据时填写：没有相关的原文，大模型无法判断）"
+    return obj
+
+
+def normalize_llm_legacy_phrases(obj: Any) -> Any:
+    """大模型若仍照抄旧占位句，统一为「没有相关的原文，大模型无法判断」。"""
+    if isinstance(obj, dict):
+        return {k: normalize_llm_legacy_phrases(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [normalize_llm_legacy_phrases(x) for x in obj]
+    if isinstance(obj, str):
+        s = obj
+        for old in (
+            "需结合原文判断",
+            "需结合原文确认",
+            "需要全文判断",
+            "需要结合聊天原文判断。",
+        ):
+            if old in s:
+                s = s.replace(old, LLM_NO_SOURCE_LABEL)
+        if s.strip() == "需结合原文判断" or s.strip() == "需结合原文判断。":
+            s = LLM_NO_SOURCE_LABEL
+        return s
+    return obj
+
+
 def build_llm_prompt(stats: dict[str, Any], contact: str, chat_history: str) -> str:
-    schema_hint = summarize_stats(stats, contact)
-    return f"""你是关系聊天记录分析助手。请基于统计数据和聊天记录片段，输出严格 JSON，不要 Markdown。
+    schema_hint = scrub_schema_for_llm_prompt(summarize_stats(stats, contact))
+    return f"""【场景说明】文本为用户在其本人设备上导出的即时通讯节选，用于个人沟通模式的统计学与社会语言学自省分析；请从中性、合规视角完成任务。
+
+你是关系聊天记录分析助手。请基于统计数据和聊天记录片段，输出严格 JSON，不要 Markdown。
 
 要求：
-1. JSON 必须兼容下面 schema 示例中的键。
-2. 所有强心理推断必须谨慎，并尽量引用聊天原话。
-3. 如果证据不足，写“证据不足”，不要编造。
-4. 如果发现严重单向投入、单相思痴迷或情感创伤绑定，danger_warnings 必须高亮。
+1. 只输出一个顶层 JSON 对象：不要用 ``` 代码围栏，不要写前言/后记说明。
+2. JSON 必须兼容下面 schema 示例中的键；schema 中的括号提示仅说明填写规则，不要原样输出提示句。
+3. language_patterns 下各字段：优先根据「聊天记录片段」做简短归纳（可引用片段中的短句）；同一字段不要与其它字段重复粘贴同一句固定文案。仅当该维度在片段中完全找不到任何可引用线索时，该字段才填写「{LLM_NO_SOURCE_LABEL}」。请不要对多个子项机械地全部填写该固定句。
+4. 所有强心理推断必须谨慎，并尽量引用聊天原话。
+5. 若其它条目证据不足可写「证据不足」，不要编造。
+6. 如果发现严重单向投入、单相思痴迷或情感创伤绑定，danger_warnings 必须高亮。
 
 schema 示例：
 {json.dumps(schema_hint, ensure_ascii=False, indent=2)}
@@ -676,6 +1145,32 @@ def truncate_chat_history(chat: str, max_chars: int) -> str:
     return chat[:head] + "\n\n...[中间聊天记录已截断，保留开头与最近互动]...\n\n" + chat[-tail:]
 
 
+def _should_retry_llm_with_shorter_chat(exc: AppError) -> bool:
+    """国内中转常见：风控拒答、JSON 解析失败等，可尝试缩短输入重试。"""
+    parts: list[str] = [str(exc)]
+    d = exc.details
+    if isinstance(d, (dict, list)):
+        parts.append(json.dumps(d, ensure_ascii=False))
+    elif isinstance(d, str):
+        parts.append(d)
+    blob = " ".join(parts).lower()
+    return any(
+        needle in blob
+        for needle in (
+            "high risk",
+            "considered high risk",
+            "rejected",
+            "moderation",
+            "content_policy",
+            "safety",
+            "不是可解析 json",
+            "不是可解析",
+            "jsondecode",
+            "parse_llm",
+        )
+    )
+
+
 def is_retryable_timeout(error: AppError) -> bool:
     detail = error.details
     if isinstance(detail, (dict, list)):
@@ -687,23 +1182,105 @@ def is_retryable_timeout(error: AppError) -> bool:
 
 
 def call_llm_analysis(stats: dict[str, Any], contact: str, chat: str) -> dict[str, Any]:
-    primary = truncate_chat_history(chat, DEFAULT_MAX_CHAT_CHARS)
+    max_chat_chars = get_max_chat_chars()
+    retry_chat_chars = get_retry_chat_chars()
+    primary = truncate_chat_history(chat, max_chat_chars)
+    if llm_debug_enabled():
+        llm_debug_line(
+            f"call_llm_analysis: contact={contact!r}  chat_raw_chars={len(chat)}  "
+            f"primary_chars={len(primary)}  DEFAULT_MAX_CHAT_CHARS={max_chat_chars}"
+        )
     try:
         return call_llm(build_llm_prompt(stats, contact, primary))
     except AppError as exc:
-        fallback = truncate_chat_history(chat, RETRY_MAX_CHAT_CHARS)
-        if not is_retryable_timeout(exc) or fallback == primary:
-            raise
-        analysis = call_llm(build_llm_prompt(stats, contact, fallback))
-        analysis["_retry_note"] = f"模型首次请求超时，已用 {RETRY_MAX_CHAT_CHARS} 字符精简片段重试。"
-        return analysis
+        last: AppError = exc
+        if llm_debug_enabled():
+            llm_debug_line(f"首轮 call_llm 失败: {exc}")
+        fallback = truncate_chat_history(chat, retry_chat_chars)
+        if is_retryable_timeout(last) and fallback != primary:
+            try:
+                if llm_debug_enabled():
+                    llm_debug_line(f"超时重试: 使用 RETRY 片段 chars={len(fallback)}")
+                analysis = call_llm(build_llm_prompt(stats, contact, fallback))
+                analysis["_retry_note"] = f"模型首次请求超时，已用 {retry_chat_chars} 字符精简片段重试。"
+                return analysis
+            except AppError as e2:
+                last = e2
+                if llm_debug_enabled():
+                    llm_debug_line(f"超时重试仍失败: {e2}")
+        if _should_retry_llm_with_shorter_chat(last):
+            for budget in (24000, 16000, 12000, 8000):
+                chunk = truncate_chat_history(chat, budget)
+                if chunk == primary:
+                    continue
+                try:
+                    if llm_debug_enabled():
+                        llm_debug_line(f"缩短聊天记录重试: budget={budget} chunk_chars={len(chunk)}")
+                    analysis = call_llm(build_llm_prompt(stats, contact, chunk))
+                    note = f"已按约 {budget} 字符截断聊天记录重试（常见于接口风控或 JSON 解析失败）。"
+                    analysis["_retry_note"] = (analysis.get("_retry_note") or "") + note
+                    return analysis
+                except AppError as e3:
+                    last = e3
+                    if llm_debug_enabled():
+                        llm_debug_line(f"budget={budget} 仍失败: {e3}")
+                    continue
+        raise last
+
+
+def llm_debug_dump_parse_failure(reason: str, normalized: str, raw: str) -> None:
+    if not llm_debug_enabled():
+        return
+    try:
+        DATA_ROOT.mkdir(parents=True, exist_ok=True)
+        dump = f"reason={reason}\n\n--- normalize_llm_json_text 结果 ---\n{normalized}\n\n--- 原始 assistant ---\n{raw}\n"
+        path = DATA_ROOT / "last_llm_parse_failed.txt"
+        path.write_text(dump, encoding="utf-8")
+        llm_debug_line(f"parse_llm_json 失败 ({reason})，全文见 {path}")
+    except OSError:
+        llm_debug_line(f"parse_llm_json 失败 ({reason}) head={repr((normalized or raw)[:500])}")
 
 
 def parse_llm_json(content: str) -> dict[str, Any]:
-    parsed = parse_jsonish(content)
-    if not isinstance(parsed, dict):
-        raise AppError("模型返回内容不是可解析 JSON", 502, content)
-    return parsed
+    raw = content or ""
+    normalized = normalize_llm_json_text(raw)
+    for candidate in (normalized, raw):
+        if not (candidate or "").strip():
+            continue
+        parsed = parse_jsonish(candidate)
+        if isinstance(parsed, dict):
+            if len(parsed) > 0:
+                return parsed
+            continue
+        blob = extract_json_object_by_brace(candidate)
+        if blob:
+            try:
+                parsed = json.loads(blob)
+                if isinstance(parsed, dict) and len(parsed) > 0:
+                    return parsed
+            except json.JSONDecodeError:
+                pass
+    preview_full = (normalized or raw).strip()
+    preview = preview_full[:1800] + ("…(截断)" if len(preview_full) > 1800 else "")
+    try:
+        if preview_full.startswith("{"):
+            solo = json.loads(preview_full)
+            if isinstance(solo, dict) and len(solo) == 0:
+                llm_debug_dump_parse_failure("empty_json_object", normalized, raw)
+                raise AppError(
+                    "模型返回空 JSON 对象 {}。若 content 与 reasoning_content 均为空或仅有推理过程，请更新 server 或更换模型后重试。",
+                    502,
+                    preview or raw[:1800],
+                )
+    except json.JSONDecodeError:
+        pass
+    llm_debug_dump_parse_failure("not_parseable_json", normalized, raw)
+    raise AppError(
+        "模型返回内容不是可解析 JSON。国内 OpenAI 兼容接口建议保持环境变量 SHE_LOVE_ME_OPENAI_JSON_OBJECT=0；"
+        "若使用官方 OpenAI 可设为 1。",
+        502,
+        preview or raw[:1800],
+    )
 
 
 def call_llm(prompt: str) -> dict[str, Any]:
@@ -715,6 +1292,44 @@ def call_llm(prompt: str) -> dict[str, Any]:
     return call_openai(prompt)
 
 
+def extract_openai_assistant_text(message: dict[str, Any]) -> str:
+    """从 OpenAI 兼容的 choices[].message 中提取助手文本。
+
+    兼容：字符串 content、多段 content 数组、以及部分国内线路（如小米 MiMo）
+    将正文放在 reasoning_content 而 content 为空的情况。
+    参考：<https://github.com/openclaw/openclaw/issues/60261>
+    """
+    if not isinstance(message, dict):
+        return ""
+    raw = message.get("content")
+    segments: list[str] = []
+    if isinstance(raw, str):
+        segments.append(raw)
+    elif isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, str):
+                segments.append(item)
+            elif isinstance(item, dict):
+                t = item.get("text")
+                if isinstance(t, str):
+                    segments.append(t)
+                elif isinstance(item.get("content"), str):
+                    segments.append(item["content"])
+    primary = "\n".join(s for s in segments if s).strip()
+    if primary:
+        return primary
+    for key in ("reasoning_content", "reasoning", "thinking"):
+        alt = message.get(key)
+        if isinstance(alt, str) and alt.strip():
+            s = alt.strip()
+            # 推理模型常在 reasoning 里先写长段「任务复述」，真正的 JSON 在最后一个 { 之后
+            lb = s.rfind("{")
+            if lb >= 80:
+                return s[lb:].strip()
+            return s
+    return ""
+
+
 def call_openai(prompt: str) -> dict[str, Any]:
     base_url = LLM_CONFIG.get("base_url", PROVIDER_DEFAULTS["openai"]["base_url"]).rstrip("/")
     api_key = LLM_CONFIG.get("api_key", "")
@@ -722,35 +1337,116 @@ def call_openai(prompt: str) -> dict[str, Any]:
     if not api_key:
         raise AppError("未配置 API Key，已改用启发式分析。", 400)
 
-    payload = {
+    max_output_tokens = get_max_output_tokens()
+    payload: dict[str, Any] = {
         "model": model,
         "messages": [
-            {"role": "system", "content": "你只输出可解析 JSON。"},
+            {
+                "role": "system",
+                "content": "你只输出单个可解析的 JSON 对象，不要 Markdown。任务为沟通语言学结构化归纳，基于用户提供的文本节选。",
+            },
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.4,
-        "max_tokens": LLM_MAX_OUTPUT_TOKENS,
+        "max_tokens": max_output_tokens,
     }
-    req = urllib.request.Request(
-        f"{base_url}/chat/completions",
-        data=json.dumps(payload).encode("utf-8"),
-        headers={
-            **LLM_HTTP_HEADERS,
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json",
-        },
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=300) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise AppError(f"模型服务返回错误: {exc.code}", 502, detail)
-    except Exception as exc:
-        raise AppError(f"模型调用失败: {exc}", 502)
-
-    return parse_llm_json(body["choices"][0]["message"]["content"])
+    # 默认关闭 json_object：多数国内 OpenAI 兼容中转不支持或与风控冲突；官方 OpenAI 可设 SHE_LOVE_ME_OPENAI_JSON_OBJECT=1
+    want_json_fmt = os.environ.get("SHE_LOVE_ME_OPENAI_JSON_OBJECT", "0").lower() not in ("0", "false", "no", "off")
+    url = f"{base_url}/chat/completions"
+    headers = {
+        **LLM_HTTP_HEADERS,
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    body: Optional[dict[str, Any]] = None
+    for attempt in (0, 1):
+        pl = dict(payload)
+        if attempt == 0 and want_json_fmt:
+            pl["response_format"] = {"type": "json_object"}
+        use_jo = bool(attempt == 0 and want_json_fmt)
+        if llm_debug_enabled():
+            llm_debug_dump_openai_request(url, model, attempt, use_jo, pl)
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(pl).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                raw_http = resp.read().decode("utf-8", errors="replace")
+                http_status = resp.status
+                try:
+                    body = json.loads(raw_http)
+                except json.JSONDecodeError as je:
+                    if llm_debug_enabled():
+                        try:
+                            DATA_ROOT.mkdir(parents=True, exist_ok=True)
+                            (DATA_ROOT / "last_llm_nonjson_http_body.txt").write_text(raw_http, encoding="utf-8")
+                            llm_debug_line(
+                                f"HTTP 200 但正文不是 JSON: {je}；已写入 {DATA_ROOT / 'last_llm_nonjson_http_body.txt'}"
+                            )
+                        except OSError:
+                            llm_debug_line(f"HTTP 200 非 JSON 正文前 800 字: {raw_http[:800]}")
+                    raise AppError(f"模型 HTTP 200 但响应不是合法 JSON: {je}", 502, raw_http[:4000]) from je
+            if llm_debug_enabled() and isinstance(body, dict):
+                llm_debug_dump_openai_response(http_status, body)
+            break
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            if llm_debug_enabled():
+                llm_debug_line(f"HTTP {exc.code} 错误体前 3000 字符:\n{detail[:3000]}")
+            if exc.code == 400 and attempt == 0 and want_json_fmt:
+                continue
+            hint = ""
+            low = detail.lower()
+            if "high risk" in low or ("risk" in low and "reject" in low) or "moderation" in low:
+                hint = (
+                    "（接口判定为高风险/风控拦截，与聊天记录长度或关键词有关；可缩短对话后再试，或设置 "
+                    "SHE_LOVE_ME_MAX_CHAT_CHARS=24000、SHE_LOVE_ME_OPENAI_JSON_OBJECT=0。）"
+                )
+            raise AppError(f"模型服务返回错误: {exc.code}{hint}", 502, detail)
+        except AppError:
+            raise
+        except Exception as exc:
+            if llm_debug_enabled():
+                llm_debug_line(f"urllib 或其它异常: {type(exc).__name__}: {exc}")
+            raise AppError(f"模型调用失败: {exc}", 502)
+    if not body:
+        raise AppError("模型调用失败: 无响应", 502)
+    choices = body.get("choices") or []
+    ch0 = choices[0] if choices and isinstance(choices[0], dict) else {}
+    fr = ch0.get("finish_reason")
+    msg = (ch0.get("message") if ch0 else {}) or {}
+    msg_d = msg if isinstance(msg, dict) else {}
+    raw_top_content = msg_d.get("content")
+    plain_top = ""
+    if isinstance(raw_top_content, str):
+        plain_top = raw_top_content.strip()
+    elif isinstance(raw_top_content, list):
+        plain_top = extract_openai_assistant_text({"content": raw_top_content}).strip()
+    content = extract_openai_assistant_text(msg_d)
+    if not content:
+        raise AppError("模型返回空内容", 502, body)
+    if fr == "length" and not plain_top and "{" not in content:
+        raise AppError(
+            "模型输出因 max_tokens 被截断（finish_reason=length）：assistant 的 content 为空，"
+            "且从 reasoning 提取的文本里尚未出现 JSON（常见于 MiMo 等先写长推理再写 JSON 的模型）。"
+            f"当前 SHE_LOVE_ME_LLM_MAX_OUTPUT_TOKENS={max_output_tokens}，请调到 12288 或更大后重试。",
+            502,
+            {"finish_reason": fr, "head": content[:600]},
+        )
+    if llm_debug_enabled():
+        try:
+            DATA_ROOT.mkdir(parents=True, exist_ok=True)
+            (DATA_ROOT / "last_llm_assistant_for_parse.txt").write_text(str(content), encoding="utf-8")
+            llm_debug_line(
+                f"待解析助手文本 {len(content)} 字符 → {DATA_ROOT / 'last_llm_assistant_for_parse.txt'}；"
+                f"终端预览前 500 字: {repr(str(content)[:500])}"
+            )
+        except OSError:
+            llm_debug_line(f"待解析助手文本 len={len(content)} head={repr(str(content)[:500])}")
+    return parse_llm_json(str(content))
 
 
 def call_anthropic(prompt: str) -> dict[str, Any]:
@@ -762,7 +1458,7 @@ def call_anthropic(prompt: str) -> dict[str, Any]:
 
     payload = {
         "model": model,
-        "max_tokens": LLM_MAX_OUTPUT_TOKENS,
+        "max_tokens": get_max_output_tokens(),
         "temperature": 0.4,
         "messages": [{"role": "user", "content": prompt}],
     }
@@ -804,30 +1500,62 @@ def call_gemini(prompt: str) -> dict[str, Any]:
     if not api_key:
         raise AppError("未配置 API Key，已改用启发式分析。", 400)
 
-    payload = {
-        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
-        "generationConfig": {"temperature": 0.4, "maxOutputTokens": LLM_MAX_OUTPUT_TOKENS},
-    }
+    want_mime = os.environ.get("SHE_LOVE_ME_GEMINI_JSON_MIME", "1").lower() not in ("0", "false", "no", "off")
     url = f"{base_url}/models/{model}:generateContent?key={api_key}"
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={**LLM_HTTP_HEADERS, "Content-Type": "application/json"},
-        method="POST",
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=300) as resp:
-            body = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as exc:
-        detail = exc.read().decode("utf-8", errors="replace")
-        raise AppError(f"Gemini 服务返回错误: {exc.code}", 502, detail)
-    except Exception as exc:
-        raise AppError(f"Gemini 调用失败: {exc}", 502)
+    headers = {**LLM_HTTP_HEADERS, "Content-Type": "application/json"}
+    body: Optional[dict[str, Any]] = None
+    for attempt in (0, 1):
+        gen_cfg: dict[str, Any] = {"temperature": 0.4, "maxOutputTokens": get_max_output_tokens()}
+        if attempt == 0 and want_mime:
+            gen_cfg["responseMimeType"] = "application/json"
+        payload = {
+            "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+            "generationConfig": gen_cfg,
+        }
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers=headers,
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=300) as resp:
+                body = json.loads(resp.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            if exc.code == 400 and attempt == 0 and want_mime:
+                continue
+            raise AppError(f"Gemini 服务返回错误: {exc.code}", 502, detail)
+        except Exception as exc:
+            raise AppError(f"Gemini 调用失败: {exc}", 502)
+    if not body:
+        raise AppError("Gemini 调用失败: 无响应", 502)
 
     candidates = body.get("candidates", [])
+    if not candidates:
+        raise AppError("Gemini 未返回候选内容（可能被安全策略拦截或无可用模型输出）", 502, body)
     parts = candidates[0].get("content", {}).get("parts", []) if candidates else []
     text = "\n".join(part.get("text", "") for part in parts if isinstance(part, dict))
     return parse_llm_json(text)
+
+
+def is_llm_analysis_insufficient(analysis: dict[str, Any]) -> bool:
+    """模型返回缺少 verdict / relationship_type / key_findings 等叙事骨架时，报告会出现大片空白。"""
+    skip = {
+        "_analysis_mode",
+        "_retry_note",
+        "_user_notice",
+        "_llm_failure_reason",
+        "_llm_failure_detail",
+    }
+    if not any(k for k in analysis if k not in skip):
+        return True
+    verdict_ok = bool(str(analysis.get("verdict", "")).strip())
+    rel_ok = bool(str(analysis.get("relationship_type", "")).strip())
+    kf = analysis.get("key_findings")
+    findings_ok = isinstance(kf, list) and len(kf) > 0
+    return not (verdict_ok or rel_ok or findings_ok)
 
 
 def make_analysis(use_llm: bool) -> dict[str, Any]:
@@ -836,8 +1564,32 @@ def make_analysis(use_llm: bool) -> dict[str, Any]:
     if use_llm:
         chat_path = DATA_ROOT / "chat_history.txt"
         chat = chat_path.read_text(encoding="utf-8", errors="replace") if chat_path.exists() else ""
-        analysis = call_llm_analysis(stats, contact, chat)
-        analysis["_analysis_mode"] = "llm"
+        try:
+            analysis = call_llm_analysis(stats, contact, chat)
+            analysis = normalize_llm_legacy_phrases(analysis)
+            if is_llm_analysis_insufficient(analysis):
+                base = summarize_stats(stats, contact)
+                analysis = {**base, **analysis}
+                analysis["_analysis_mode"] = "llm_merged_heuristic"
+                analysis["_user_notice"] = (
+                    "大模型返回不完整（缺少 verdict / relationship_type / key_findings 等），已用本地统计补全报告。"
+                    "若此前得到空 JSON，请确认已更新 server 并重新运行深度分析。"
+                )
+            else:
+                analysis["_analysis_mode"] = "llm"
+        except AppError as exc:
+            analysis = summarize_stats(stats, contact)
+            analysis["_analysis_mode"] = "heuristic_fallback"
+            analysis["_llm_failure_reason"] = str(exc)[:1200]
+            d = exc.details
+            if isinstance(d, str):
+                analysis["_llm_failure_detail"] = d[:2000]
+            elif d is not None:
+                analysis["_llm_failure_detail"] = json.dumps(d, ensure_ascii=False)[:2000]
+            analysis["_user_notice"] = (
+                "大模型调用未成功，以下为本地统计占位结果（语言模式见「本地化运行，未使用大模型」类提示）。"
+                "国内 OpenAI 兼容接口建议保持 SHE_LOVE_ME_OPENAI_JSON_OBJECT=0，并适当减小 SHE_LOVE_ME_MAX_CHAT_CHARS。"
+            )
     else:
         analysis = summarize_stats(stats, contact)
         analysis["_analysis_mode"] = "heuristic"
@@ -861,6 +1613,12 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if self.path == "/api/status":
                 self.send_json(build_status())
+                return
+            if self.path.split("?", 1)[0] == "/api/discover/progress":
+                self.send_json(get_discover_progress())
+                return
+            if self.path.split("?", 1)[0] == "/api/messages/daily":
+                self.send_json({"ok": True, **build_daily_counts_from_messages()})
                 return
             if self.path.startswith("/reports/"):
                 name = urllib.request.url2pathname(self.path[len("/reports/"):])
@@ -915,9 +1673,13 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_json({"ok": True, "result": result, "messages": read_json(DATA_ROOT / "messages.json")})
                 return
             if self.path == "/api/stats":
+                date_from = str(body.get("date_from", "")).strip()
+                date_to = str(body.get("date_to", "")).strip()
                 result = run_script("stats_analyzer.py", [
                     "--input", str(DATA_ROOT / "messages.json"),
                     "--output", str(DATA_ROOT / "stats.json"),
+                    *(["--date-start", date_from] if date_from else []),
+                    *(["--date-end", date_to] if date_to else []),
                 ], timeout=1200)
                 self.send_json({"ok": True, "result": result, "stats": read_json(DATA_ROOT / "stats.json")})
                 return
@@ -998,6 +1760,12 @@ def main() -> None:
     ensure_dirs()
     print(f"Runtime: {RUNTIME_ROOT}")
     print(f"Open: http://{HOST}:{PORT}")
+    if llm_debug_enabled():
+        print(
+            f"[LLM-DEBUG] 已开启：每次模型调用会在 stderr 打印 [LLM-DEBUG] 行，并在 {DATA_ROOT} 写入 "
+            "last_llm_user_prompt.txt / last_llm_response_body.json / last_llm_parse_failed.txt 等文件。",
+            flush=True,
+        )
     ThreadingHTTPServer((HOST, PORT), Handler).serve_forever()
 
 

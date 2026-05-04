@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>TA回我了 - 微信恋爱分析</title>
-  <link rel="stylesheet" href="styles.css?v=20260504-5">
+  <link rel="stylesheet" href="styles.css?v=20260504-6">
 </head>
 <body>
   <header class="top-nav">
@@ -66,20 +66,23 @@
               <div class="range-panel" id="rangePanel">
                 <h4>时间范围</h4>
                 <p class="flow-copy" id="rangeHint">选择联系人后可按日期筛选，并查看每天聊天条数。</p>
-                <div class="range-grid">
-                  <label>
-                    <span>开始日期</span>
-                    <input id="rangeStart" type="date" disabled>
-                  </label>
-                  <label>
-                    <span>结束日期</span>
-                    <input id="rangeEnd" type="date" disabled>
-                  </label>
+                <p class="range-current" id="rangeCurrent">当前范围：-</p>
+                <div class="range-calendar" id="rangeCalendar" hidden>
+                  <div class="range-cal-head">
+                    <button type="button" class="secondary range-cal-nav" id="rangeCalPrev" aria-label="上一月">‹</button>
+                    <strong id="rangeCalTitle">—</strong>
+                    <button type="button" class="secondary range-cal-nav" id="rangeCalNext" aria-label="下一月">›</button>
+                  </div>
+                  <div class="range-cal-weekdays" aria-hidden="true">
+                    <span>一</span><span>二</span><span>三</span><span>四</span><span>五</span><span>六</span><span>日</span>
+                  </div>
+                  <div class="range-cal-grid" id="rangeCalGrid"></div>
+                  <div class="range-cal-foot">
+                    <button type="button" class="secondary" id="rangeCalReset">恢复全部日期</button>
+                    <span class="range-cal-tip">点击两天设定区间；格内数字为该日条数。</span>
+                  </div>
                 </div>
                 <p class="flow-hint" id="rangeTotal">所选范围消息总数：-</p>
-                <div class="daily-list" id="dailyList">
-                  <div class="contact-empty">选择联系人后显示每日聊天条数。</div>
-                </div>
               </div>
             </div>
 
@@ -188,6 +191,26 @@
                   <span>模型回复最大 Token</span>
                   <input id="maxOutputTokens" type="number" min="256" max="32768" step="256" placeholder="12288">
                 </label>
+                <label>
+                  <span>深度分析模式</span>
+                  <select id="analysisPipeline">
+                    <option value="auto">自动（全文超过上限则分段）</option>
+                    <option value="single">单次截断（头尾保留）</option>
+                    <option value="segmented">分段 Map-Reduce</option>
+                  </select>
+                </label>
+                <label>
+                  <span>分段目标字数</span>
+                  <input id="segmentTargetChars" type="number" min="4000" max="80000" step="1000" placeholder="16000">
+                </label>
+                <label>
+                  <span>分段硬上限</span>
+                  <input id="segmentHardCapChars" type="number" min="8000" max="120000" step="1000" placeholder="28000">
+                </label>
+                <label>
+                  <span>最多分段数</span>
+                  <input id="segmentMaxSegments" type="number" min="1" max="48" step="1" placeholder="24">
+                </label>
               </div>
             </div>
           </section>
@@ -197,6 +220,9 @@
               <button class="theme-choice active" data-theme="neon"><span>I.</span>霓虹紫</button>
               <button class="theme-choice" data-theme="cyan"><span>II.</span>电光蓝</button>
               <button class="theme-choice" data-theme="ember"><span>III.</span>暖焰橙</button>
+              <button class="theme-choice" data-theme="fog"><span>IV.</span>雾粉信笺</button>
+              <button class="theme-choice" data-theme="ink"><span>V.</span>午夜墨蓝</button>
+              <button class="theme-choice" data-theme="clay"><span>VI.</span>余烬陶土</button>
             </div>
           </section>
         </article>
@@ -218,6 +244,6 @@
     <a href="https://github.com/Exekiel179/she-love-me-web" target="_blank" rel="noreferrer">github.com/Exekiel179/she-love-me-web</a>
   </footer>
 
-  <script src="app.js?v=20260504-6"></script>
+  <script src="app.js?v=20260504-8"></script>
 </body>
 </html>

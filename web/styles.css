@@ -63,6 +63,90 @@ body.ui-ember {
   --shadow: 0 24px 90px rgba(18, 8, 2, .5);
 }
 
+/* 雾粉信笺：恋爱 / 回信感，柔玫瑰主色 */
+body.ui-fog {
+  --bg: #0f0a10;
+  --bg-2: #1a1218;
+  --panel: rgba(26, 18, 28, .9);
+  --panel-strong: #140f16;
+  --ink: #fdf2f8;
+  --ink-soft: #d4b8c8;
+  --muted: #7d5f72;
+  --line: rgba(244, 114, 182, .16);
+  --accent: #e11d48;
+  --accent-strong: #fb7185;
+  --accent-ink: #ffffff;
+  --good: #34d399;
+  --danger: #f43f5e;
+  --hot: #fda4af;
+  --cool: #a78bfa;
+  --shadow: 0 24px 90px rgba(8, 2, 6, .48);
+}
+
+body.ui-fog {
+  background-image:
+    radial-gradient(circle at 50% -8%, color-mix(in srgb, var(--accent) 16%, transparent), transparent 38%),
+    radial-gradient(circle at 82% 12%, color-mix(in srgb, var(--cool) 12%, transparent), transparent 28%),
+    radial-gradient(circle at 16% 22%, color-mix(in srgb, var(--hot) 12%, transparent), transparent 26%),
+    linear-gradient(180deg, #1a1218 0%, var(--bg) 46%, #0a0609 100%);
+}
+
+/* 午夜墨蓝：心理 / 严肃分析 */
+body.ui-ink {
+  --bg: #070b14;
+  --bg-2: #0f172a;
+  --panel: rgba(15, 23, 42, .92);
+  --panel-strong: #0c1222;
+  --ink: #f1f5f9;
+  --ink-soft: #94a3b8;
+  --muted: #64748b;
+  --line: rgba(148, 163, 184, .2);
+  --accent: #6366f1;
+  --accent-strong: #818cf8;
+  --accent-ink: #ffffff;
+  --good: #34d399;
+  --danger: #f43f5e;
+  --hot: #f472b6;
+  --cool: #38bdf8;
+  --shadow: 0 24px 90px rgba(2, 6, 18, .45);
+}
+
+body.ui-ink {
+  background-image:
+    radial-gradient(circle at 50% -8%, color-mix(in srgb, var(--accent) 18%, transparent), transparent 36%),
+    radial-gradient(circle at 82% 12%, color-mix(in srgb, var(--cool) 14%, transparent), transparent 28%),
+    radial-gradient(circle at 18% 20%, color-mix(in srgb, var(--hot) 8%, transparent), transparent 24%),
+    linear-gradient(180deg, #0f172a 0%, var(--bg) 46%, #050810 100%);
+}
+
+/* 余烬陶土：暖、低刺激、少科技感 */
+body.ui-clay {
+  --bg: #0c0908;
+  --bg-2: #1a1410;
+  --panel: rgba(35, 28, 22, .92);
+  --panel-strong: #120e0b;
+  --ink: #fff7ed;
+  --ink-soft: #d6c4b4;
+  --muted: #8b7355;
+  --line: rgba(251, 191, 36, .12);
+  --accent: #ea580c;
+  --accent-strong: #fb923c;
+  --accent-ink: #ffffff;
+  --good: #86efac;
+  --danger: #f87171;
+  --hot: #fb923c;
+  --cool: #fcd34d;
+  --shadow: 0 24px 90px rgba(12, 6, 2, .48);
+}
+
+body.ui-clay {
+  background-image:
+    radial-gradient(circle at 50% -6%, color-mix(in srgb, var(--accent) 14%, transparent), transparent 38%),
+    radial-gradient(circle at 78% 14%, color-mix(in srgb, var(--cool) 10%, transparent), transparent 30%),
+    radial-gradient(circle at 14% 24%, color-mix(in srgb, var(--hot) 8%, transparent), transparent 26%),
+    linear-gradient(180deg, #1c1410 0%, var(--bg) 48%, #080605 100%);
+}
+
 body {
   --particle-hue-base: 292;
   --particle-hue-span: 360;
@@ -904,38 +988,131 @@ select:focus {
   margin: 0 0 8px;
 }
 
-.range-grid {
-  margin-top: 10px;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
-}
-
-.range-grid label {
-  display: grid;
-  gap: 6px;
-}
-
-.daily-list {
-  margin-top: 10px;
-  max-height: 180px;
-  overflow: auto;
-  border: 1px solid var(--line);
-  background: color-mix(in srgb, var(--panel-strong) 72%, transparent);
-  padding: 10px;
-}
-
-.daily-row {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  gap: 8px;
-  padding: 6px 0;
-  border-bottom: 1px solid color-mix(in srgb, var(--line) 85%, transparent);
+.range-current {
+  margin: 10px 0 0;
   font-size: 13px;
+  color: var(--ink-soft);
 }
 
-.daily-row:last-child {
-  border-bottom: 0;
+.range-calendar {
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--panel-strong) 72%, transparent);
+}
+
+.range-cal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.range-cal-head strong {
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.range-cal-nav {
+  min-width: 42px;
+  padding: 6px 10px;
+}
+
+.range-cal-weekdays {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+  margin-bottom: 6px;
+  font-size: 11px;
+  color: var(--ink-soft);
+  text-align: center;
+}
+
+.range-cal-grid {
+  display: grid;
+  grid-template-columns: repeat(7, 1fr);
+  gap: 4px;
+}
+
+.range-cal-slot {
+  min-height: 54px;
+  border-radius: 8px;
+  padding: 4px 2px 6px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  font-size: 12px;
+  border: 1px solid transparent;
+  box-sizing: border-box;
+}
+
+.range-cal-cell {
+  cursor: pointer;
+  background: color-mix(in srgb, var(--panel) 82%, transparent);
+  border-color: color-mix(in srgb, var(--line) 65%, transparent);
+  color: inherit;
+  font: inherit;
+  text-align: center;
+}
+
+.range-cal-cell:hover:not(:disabled) {
+  border-color: var(--accent-strong);
+}
+
+.range-cal-day.in-range {
+  background: color-mix(in srgb, var(--accent) 16%, var(--panel));
+}
+
+.range-cal-day.edge-start,
+.range-cal-day.edge-end {
+  border-color: var(--accent-strong);
+}
+
+.range-cal-anchor {
+  outline: 2px solid var(--accent-strong);
+  outline-offset: 1px;
+}
+
+.range-cal-outside {
+  opacity: 0.32;
+  cursor: default;
+  min-height: 54px;
+}
+
+.range-cal-d {
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.15;
+}
+
+.range-cal-n {
+  font-size: 10px;
+  color: var(--ink-soft);
+  margin-top: 3px;
+  line-height: 1.2;
+}
+
+.range-cal-pad {
+  min-height: 0;
+  padding: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.range-cal-foot {
+  margin-top: 12px;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+}
+
+.range-cal-tip {
+  font-size: 12px;
+  color: var(--ink-soft);
 }
 
 .switch {
@@ -1522,7 +1699,6 @@ select:focus {
   }
   .contact-toolbar,
   .contact-list,
-  .range-grid,
   .quiz-grid,
   .config-grid,
   .analysis-grid,

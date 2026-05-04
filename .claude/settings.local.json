@@ -1,0 +1,14 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s https://raw.githubusercontent.com/Yuan1z0825/nature-skills/main/README.md)",
+      "Bash(curl -s https://api.github.com/repos/Yuan1z0825/nature-skills/contents/)",
+      "Bash(python3 -c \"import sys,json; items=json.load\\(sys.stdin\\); [print\\(i['name'],i['type']\\) for i in items]\")",
+      "Bash(curl -sL https://api.github.com/repos/Yuan1z0825/nature-skills/contents/)",
+      "Bash(curl -sL \"https://api.github.com/repos/Yuan1z0825/nature-skills/git/trees/main\")",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(i['path'],i['type']\\) for i in data.get\\('tree',[]\\)]\")",
+      "Bash(python output/generate_pptx.py)",
+      "Bash(python -c ' *)"
+    ]
+  }
+}

@@ -20,6 +20,14 @@ const state = {
   dailySeries: [],
   dailyTotal: 0,
   messagesReadyContact: "",
+  /** 与服务器 min_date/max_date 一致，用于月历可选范围 */
+  rangeDataMin: "",
+  rangeDataMax: "",
+  /** 当前月历展示的年月（1–12） */
+  rangeCalYear: null,
+  rangeCalMonth: null,
+  /** 区间选择：第一次点击的锚点日期，空表示等待第一次点击 */
+  rangePickAnchor: "",
 };
 
 const $ = (id) => document.getElementById(id);
@@ -287,8 +295,13 @@ function renderStatus(status, options = {}) {
   if ($("maxChatChars")) $("maxChatChars").value = String(limits.max_chat_chars || 60000);
   if ($("retryChatChars")) $("retryChatChars").value = String(limits.retry_chat_chars || 24000);
   if ($("maxOutputTokens")) $("maxOutputTokens").value = String(limits.max_output_tokens || 12288);
+  if ($("analysisPipeline")) $("analysisPipeline").value = limits.analysis_pipeline || "auto";
+  if ($("segmentTargetChars")) $("segmentTargetChars").value = String(limits.segment_target_chars || 16000);
+  if ($("segmentHardCapChars")) $("segmentHardCapChars").value = String(limits.segment_hard_cap_chars || 28000);
+  if ($("segmentMaxSegments")) $("segmentMaxSegments").value = String(limits.segment_max_segments || 24);
   if ($("configHint")) {
-    $("configHint").textContent = `当前：${status.llm_provider || "openai"} · ${status.llm_base_url || "未设置 BaseURL"} · ${status.llm_model || "未设置模型"} · ${status.llm_key_hint || "未设置"} · 聊天${limits.max_chat_chars || 60000}字 · 输出${limits.max_output_tokens || 12288}token`;
+    const pipe = limits.analysis_pipeline || "auto";
+    $("configHint").textContent = `当前：${status.llm_provider || "openai"} · ${status.llm_base_url || "未设置 BaseURL"} · ${status.llm_model || "未设置模型"} · ${status.llm_key_hint || "未设置"} · 聊天${limits.max_chat_chars || 60000}字 · 输出${limits.max_output_tokens || 12288}token · 分析模式 ${pipe}`;
   }
   updateEndpointPreview();
 
@@ -548,42 +561,204 @@ function resetRangeState() {
   state.dailySeries = [];
   state.dailyTotal = 0;
   state.messagesReadyContact = "";
-  if ($("rangeStart")) {
-    $("rangeStart").value = "";
-    $("rangeStart").disabled = true;
-  }
-  if ($("rangeEnd")) {
-    $("rangeEnd").value = "";
-    $("rangeEnd").disabled = true;
-  }
+  state.rangeDataMin = "";
+  state.rangeDataMax = "";
+  state.rangeCalYear = null;
+  state.rangeCalMonth = null;
+  state.rangePickAnchor = "";
   if ($("rangeTotal")) $("rangeTotal").textContent = "所选范围消息总数：-";
-  if ($("dailyList")) $("dailyList").innerHTML = `<div class="contact-empty">选择联系人后显示每日聊天条数。</div>`;
   if ($("rangeHint")) $("rangeHint").textContent = "选择联系人后可按日期筛选，并查看每天聊天条数。";
+  renderRangeCalendar();
+  updateRangeSummary();
 }
 
-function renderDailyList() {
-  const list = $("dailyList");
-  if (!list) return;
-  if (!state.dailySeries.length) {
-    list.innerHTML = `<div class="contact-empty">当前联系人没有可用消息。</div>`;
+/** @returns {{ y: number, mo: number, d: number } | null} */
+function parseISODate(str) {
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(str || ""));
+  if (!m) return null;
+  return { y: Number(m[1]), mo: Number(m[2]), d: Number(m[3]) };
+}
+
+function monthIndex(y, mo) {
+  return y * 12 + (mo - 1);
+}
+
+function canShiftRangeCalMonth(delta) {
+  const vy = state.rangeCalYear;
+  const vm = state.rangeCalMonth;
+  if (vy == null || vm == null) return false;
+  let y = vy;
+  let m = vm + delta;
+  while (m < 1) {
+    m += 12;
+    y -= 1;
+  }
+  while (m > 12) {
+    m -= 12;
+    y += 1;
+  }
+  const minS = state.rangeDataMin;
+  const maxS = state.rangeDataMax;
+  const pMin = parseISODate(minS);
+  const pMax = parseISODate(maxS);
+  if (!pMin || !pMax) return false;
+  const t = monthIndex(y, m);
+  return t >= monthIndex(pMin.y, pMin.mo) && t <= monthIndex(pMax.y, pMax.mo);
+}
+
+function shiftRangeCalMonth(delta) {
+  if (!canShiftRangeCalMonth(delta)) return;
+  let y = state.rangeCalYear;
+  let m = state.rangeCalMonth;
+  if (y == null || m == null) return;
+  m += delta;
+  while (m < 1) {
+    m += 12;
+    y -= 1;
+  }
+  while (m > 12) {
+    m -= 12;
+    y += 1;
+  }
+  state.rangeCalYear = y;
+  state.rangeCalMonth = m;
+  renderRangeCalendar();
+}
+
+function buildDailyCountMap() {
+  const map = new Map();
+  for (const row of state.dailySeries) {
+    map.set(row.date, Number(row.count || 0));
+  }
+  return map;
+}
+
+function renderRangeCalendar() {
+  const cal = $("rangeCalendar");
+  const grid = $("rangeCalGrid");
+  const title = $("rangeCalTitle");
+  if (!cal || !grid) return;
+
+  const minD = state.rangeDataMin;
+  const maxD = state.rangeDataMax;
+  if (!state.dailySeries.length || !minD || !maxD) {
+    cal.hidden = true;
+    grid.innerHTML = "";
+    updateRangeSummary();
     return;
   }
-  list.innerHTML = state.dailySeries
-    .map((d) => `<div class="daily-row"><span>${esc(d.date)}</span><strong>${Number(d.count || 0).toLocaleString()} 条</strong></div>`)
-    .join("");
+  cal.hidden = false;
+
+  let vy = state.rangeCalYear;
+  let vm = state.rangeCalMonth;
+  if (vy == null || vm == null) {
+    const end = parseISODate(state.dateTo || maxD) || parseISODate(maxD);
+    vy = end.y;
+    vm = end.mo;
+    state.rangeCalYear = vy;
+    state.rangeCalMonth = vm;
+  }
+
+  if (title) title.textContent = `${vy}年${vm}月`;
+
+  const prevBtn = $("rangeCalPrev");
+  const nextBtn = $("rangeCalNext");
+  if (prevBtn) prevBtn.disabled = !canShiftRangeCalMonth(-1);
+  if (nextBtn) nextBtn.disabled = !canShiftRangeCalMonth(1);
+
+  const countMap = buildDailyCountMap();
+  const from = state.dateFrom || minD;
+  const to = state.dateTo || maxD;
+
+  const first = new Date(vy, vm - 1, 1);
+  const lead = (first.getDay() + 6) % 7;
+  const daysInMonth = new Date(vy, vm, 0).getDate();
+
+  let html = "";
+  for (let i = 0; i < lead; i += 1) {
+    html += `<div class="range-cal-slot range-cal-pad" aria-hidden="true"></div>`;
+  }
+  for (let d = 1; d <= daysInMonth; d += 1) {
+    const mo = String(vm).padStart(2, "0");
+    const dd = String(d).padStart(2, "0");
+    const ds = `${vy}-${mo}-${dd}`;
+    const inData = ds >= minD && ds <= maxD;
+    const cnt = countMap.has(ds) ? countMap.get(ds) : 0;
+    const inRange = inData && ds >= from && ds <= to;
+    const isStart = inData && ds === from;
+    const isEnd = inData && ds === to;
+    const isAnchor =
+      Boolean(state.rangePickAnchor) && state.rangePickAnchor === ds && state.dateFrom === state.dateTo && state.dateFrom === ds;
+    const cls = [
+      "range-cal-slot",
+      inData ? "range-cal-cell range-cal-day" : "range-cal-outside",
+      inRange && inData ? "in-range" : "",
+      isStart ? "edge-start" : "",
+      isEnd ? "edge-end" : "",
+      isAnchor ? "range-cal-anchor" : "",
+    ]
+      .filter(Boolean)
+      .join(" ");
+    const dayNum = `<span class="range-cal-d">${d}</span>`;
+    const cntStr = inData
+      ? `<span class="range-cal-n">${Number(cnt).toLocaleString()}条</span>`
+      : `<span class="range-cal-n"> </span>`;
+    if (inData) {
+      html += `<button type="button" class="${cls}" data-date="${esc(ds)}">${dayNum}${cntStr}</button>`;
+    } else {
+      html += `<div class="${cls}">${dayNum}${cntStr}</div>`;
+    }
+  }
+  const used = lead + daysInMonth;
+  const tail = (7 - (used % 7)) % 7;
+  for (let i = 0; i < tail; i += 1) {
+    html += `<div class="range-cal-slot range-cal-pad" aria-hidden="true"></div>`;
+  }
+  grid.innerHTML = html;
+  updateRangeSummary();
+}
+
+function onRangeCalDayPick(dateStr) {
+  if (!dateStr || dateStr < state.rangeDataMin || dateStr > state.rangeDataMax) return;
+  if (!state.rangePickAnchor) {
+    state.rangePickAnchor = dateStr;
+    state.dateFrom = dateStr;
+    state.dateTo = dateStr;
+  } else {
+    let a = state.rangePickAnchor;
+    let b = dateStr;
+    if (a > b) [a, b] = [b, a];
+    state.dateFrom = a;
+    state.dateTo = b;
+    state.rangePickAnchor = "";
+  }
+  renderRangeCalendar();
+}
+
+function resetRangeToFullData() {
+  if (!state.rangeDataMin || !state.rangeDataMax) return;
+  state.dateFrom = state.rangeDataMin;
+  state.dateTo = state.rangeDataMax;
+  state.rangePickAnchor = "";
+  renderRangeCalendar();
 }
 
 function updateRangeSummary() {
   const totalEl = $("rangeTotal");
+  const curEl = $("rangeCurrent");
   if (!totalEl || !state.dailySeries.length) {
     if (totalEl) totalEl.textContent = "所选范围消息总数：-";
+    if (curEl) curEl.textContent = "当前范围：-";
     return;
   }
-  const from = state.dateFrom || state.dailySeries[0].date;
-  const to = state.dateTo || state.dailySeries[state.dailySeries.length - 1].date;
+  const minD = state.rangeDataMin || state.dailySeries[0].date;
+  const maxD = state.rangeDataMax || state.dailySeries[state.dailySeries.length - 1].date;
+  const from = state.dateFrom || minD;
+  const to = state.dateTo || maxD;
+  if (curEl) curEl.textContent = `当前范围：${from} — ${to}`;
   let total = 0;
-  for (const d of state.dailySeries) {
-    if (d.date >= from && d.date <= to) total += Number(d.count || 0);
+  for (const row of state.dailySeries) {
+    if (row.date >= from && row.date <= to) total += Number(row.count || 0);
   }
   totalEl.textContent = `所选范围消息总数：${total.toLocaleString()} 条（${from} 至 ${to}）`;
 }
@@ -593,23 +768,21 @@ function applyDailyData(data) {
   state.dailyTotal = Number(data.total || 0);
   const minDate = data.min_date || (state.dailySeries[0] && state.dailySeries[0].date) || "";
   const maxDate = data.max_date || (state.dailySeries[state.dailySeries.length - 1] && state.dailySeries[state.dailySeries.length - 1].date) || "";
+  state.rangeDataMin = minDate;
+  state.rangeDataMax = maxDate;
   state.dateFrom = minDate;
   state.dateTo = maxDate;
-  if ($("rangeStart")) {
-    $("rangeStart").value = minDate;
-    $("rangeStart").min = minDate;
-    $("rangeStart").max = maxDate;
-    $("rangeStart").disabled = !minDate;
-  }
-  if ($("rangeEnd")) {
-    $("rangeEnd").value = maxDate;
-    $("rangeEnd").min = minDate;
-    $("rangeEnd").max = maxDate;
-    $("rangeEnd").disabled = !maxDate;
+  state.rangePickAnchor = "";
+  const endPart = parseISODate(maxDate);
+  if (endPart) {
+    state.rangeCalYear = endPart.y;
+    state.rangeCalMonth = endPart.mo;
+  } else {
+    state.rangeCalYear = null;
+    state.rangeCalMonth = null;
   }
   if ($("rangeHint")) $("rangeHint").textContent = `已加载 ${state.dailySeries.length} 天聊天分布。`;
-  renderDailyList();
-  updateRangeSummary();
+  renderRangeCalendar();
 }
 
 async function ensureSelectedMessagesAndDaily(forceExtract = false) {
@@ -666,9 +839,15 @@ function readConfigForm() {
     base_url: $("llmBaseUrl")?.value.trim() || "",
     model: $("llmModel")?.value.trim() || "",
     api_key: state.pendingApiKey || (inputValue === MASKED_KEY ? "" : inputValue),
-    max_chat_chars: clampInt($("maxChatChars")?.value, 60000, 4000, 200000),
-    retry_chat_chars: clampInt($("retryChatChars")?.value, 24000, 2000, 120000),
-    max_output_tokens: clampInt($("maxOutputTokens")?.value, 12288, 256, 32768),
+    analysis: {
+      max_chat_chars: clampInt($("maxChatChars")?.value, 60000, 4000, 200000),
+      retry_chat_chars: clampInt($("retryChatChars")?.value, 24000, 2000, 120000),
+      max_output_tokens: clampInt($("maxOutputTokens")?.value, 12288, 256, 32768),
+      analysis_pipeline: $("analysisPipeline")?.value || "auto",
+      segment_target_chars: clampInt($("segmentTargetChars")?.value, 16000, 4000, 80000),
+      segment_hard_cap_chars: clampInt($("segmentHardCapChars")?.value, 28000, 8000, 120000),
+      segment_max_segments: clampInt($("segmentMaxSegments")?.value, 24, 1, 48),
+    },
   };
 }
 
@@ -703,7 +882,7 @@ function applyProviderDefaults(provider) {
   updateEndpointPreview();
 }
 
-const UI_THEMES = ["neon", "cyan", "ember"];
+const UI_THEMES = ["neon", "cyan", "ember", "fog", "ink", "clay"];
 
 function normalizeUiTheme(theme) {
   return UI_THEMES.includes(theme) ? theme : "neon";
@@ -711,7 +890,19 @@ function normalizeUiTheme(theme) {
 
 function applyUiTheme(theme) {
   const selected = normalizeUiTheme(theme);
-  document.body.classList.remove("ui-neon", "ui-cyan", "ui-ember", "ui-rose", "ui-blue", "ui-graphite", "ui-gold", "ui-minimal");
+  document.body.classList.remove(
+    "ui-neon",
+    "ui-cyan",
+    "ui-ember",
+    "ui-fog",
+    "ui-ink",
+    "ui-clay",
+    "ui-rose",
+    "ui-blue",
+    "ui-graphite",
+    "ui-gold",
+    "ui-minimal",
+  );
   document.body.classList.add(`ui-${selected}`);
   localStorage.setItem("ta-ui-theme", selected);
   document.querySelectorAll(".theme-choice").forEach((button) => {
@@ -844,10 +1035,29 @@ async function extractAndStats(onProgress) {
 
 async function runSubtextScan() {
   log("调用模型生成潜台词扫描");
-  const data = await api("/api/analyze", { method: "POST", body: { use_llm: true } });
-  renderStatus(data.status);
-  log("analysis.json 已生成", { mode: data.analysis._analysis_mode });
-  return data;
+  const poll = window.setInterval(async () => {
+    try {
+      const res = await fetch(`${API_BASE}/api/analyze/progress`);
+      if (!res.ok) return;
+      const p = await res.json();
+      if (p.running && (p.map_total || 0) > 0) {
+        const n = p.map_total || 1;
+        const i = p.map_index || 0;
+        const base = 54;
+        const span = 18;
+        const label = p.phase && String(p.phase).includes("reduce") ? "综合各段（Reduce）…" : `分段分析 Map ${i}/${n}`;
+        setAnalysisProgress(base + (i / n) * span, label);
+      }
+    } catch (_) {}
+  }, 750);
+  try {
+    const data = await api("/api/analyze", { method: "POST", body: { use_llm: true } });
+    renderStatus(data.status);
+    log("analysis.json 已生成", { mode: data.analysis._analysis_mode });
+    return data;
+  } finally {
+    window.clearInterval(poll);
+  }
 }
 
 async function analyze() {
@@ -1219,26 +1429,15 @@ function bind() {
     $("logLatest").textContent = "日志已清空。";
   });
   on("contactSearch", "input", renderContacts);
-  on("rangeStart", "change", () => {
-    const start = $("rangeStart")?.value || "";
-    const end = $("rangeEnd")?.value || "";
-    state.dateFrom = start;
-    if (start && end && start > end) {
-      state.dateTo = start;
-      if ($("rangeEnd")) $("rangeEnd").value = start;
-    }
-    updateRangeSummary();
+  on("rangeCalGrid", "click", (event) => {
+    const btn = event.target.closest("button[data-date]");
+    if (!btn) return;
+    const ds = btn.getAttribute("data-date");
+    if (ds) onRangeCalDayPick(ds);
   });
-  on("rangeEnd", "change", () => {
-    const start = $("rangeStart")?.value || "";
-    const end = $("rangeEnd")?.value || "";
-    state.dateTo = end;
-    if (start && end && start > end) {
-      state.dateFrom = end;
-      if ($("rangeStart")) $("rangeStart").value = end;
-    }
-    updateRangeSummary();
-  });
+  on("rangeCalPrev", "click", () => shiftRangeCalMonth(-1));
+  on("rangeCalNext", "click", () => shiftRangeCalMonth(1));
+  on("rangeCalReset", "click", () => resetRangeToFullData());
   on("contactList", "click", async (event) => {
     const button = event.target.closest(".contact");
     if (!button) return;

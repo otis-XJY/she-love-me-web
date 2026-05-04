@@ -55,10 +55,18 @@ DEFAULT_MAX_CHAT_CHARS = int(os.environ.get("SHE_LOVE_ME_MAX_CHAT_CHARS", "60000
 RETRY_MAX_CHAT_CHARS = int(os.environ.get("SHE_LOVE_ME_RETRY_CHAT_CHARS", "24000"))
 # 默认需偏大：MiMo 等会把「思考」写在 reasoning_content，JSON 在后；过小会出现 finish_reason=length 且无法解析。
 LLM_MAX_OUTPUT_TOKENS = int(os.environ.get("SHE_LOVE_ME_LLM_MAX_OUTPUT_TOKENS", "12288"))
-ANALYSIS_CONFIG: dict[str, int] = {
+DEFAULT_SEGMENT_TARGET_CHARS = int(os.environ.get("SHE_LOVE_ME_SEGMENT_TARGET_CHARS", "16000"))
+DEFAULT_SEGMENT_HARD_CAP_CHARS = int(os.environ.get("SHE_LOVE_ME_SEGMENT_HARD_CAP_CHARS", "28000"))
+DEFAULT_SEGMENT_MAX_SEGMENTS = int(os.environ.get("SHE_LOVE_ME_SEGMENT_MAX_SEGMENTS", "24"))
+
+ANALYSIS_CONFIG: dict[str, Any] = {
     "max_chat_chars": DEFAULT_MAX_CHAT_CHARS,
     "retry_chat_chars": RETRY_MAX_CHAT_CHARS,
     "max_output_tokens": LLM_MAX_OUTPUT_TOKENS,
+    "analysis_pipeline": os.environ.get("SHE_LOVE_ME_ANALYSIS_PIPELINE", "auto").strip().lower(),
+    "segment_target_chars": DEFAULT_SEGMENT_TARGET_CHARS,
+    "segment_hard_cap_chars": DEFAULT_SEGMENT_HARD_CAP_CHARS,
+    "segment_max_segments": DEFAULT_SEGMENT_MAX_SEGMENTS,
 }
 
 
@@ -101,6 +109,58 @@ def get_max_output_tokens() -> int:
         except ValueError:
             pass
     return max(256, ANALYSIS_CONFIG.get("max_output_tokens", LLM_MAX_OUTPUT_TOKENS))
+
+
+def get_analysis_pipeline() -> str:
+    raw = os.environ.get("SHE_LOVE_ME_ANALYSIS_PIPELINE", "").strip().lower()
+    if raw in ("auto", "single", "segmented"):
+        return raw
+    v = str(ANALYSIS_CONFIG.get("analysis_pipeline", "auto")).strip().lower()
+    if v in ("auto", "single", "segmented"):
+        return v
+    return "auto"
+
+
+def get_segment_target_chars() -> int:
+    raw = os.environ.get("SHE_LOVE_ME_SEGMENT_TARGET_CHARS")
+    if raw:
+        try:
+            return max(4000, min(int(raw), 80000))
+        except ValueError:
+            pass
+    v = ANALYSIS_CONFIG.get("segment_target_chars", DEFAULT_SEGMENT_TARGET_CHARS)
+    try:
+        return max(4000, min(int(v), 80000))
+    except (TypeError, ValueError):
+        return DEFAULT_SEGMENT_TARGET_CHARS
+
+
+def get_segment_hard_cap_chars() -> int:
+    raw = os.environ.get("SHE_LOVE_ME_SEGMENT_HARD_CAP_CHARS")
+    if raw:
+        try:
+            return max(8000, min(int(raw), 120000))
+        except ValueError:
+            pass
+    v = ANALYSIS_CONFIG.get("segment_hard_cap_chars", DEFAULT_SEGMENT_HARD_CAP_CHARS)
+    try:
+        return max(8000, min(int(v), 120000))
+    except (TypeError, ValueError):
+        return DEFAULT_SEGMENT_HARD_CAP_CHARS
+
+
+def get_segment_max_segments() -> int:
+    raw = os.environ.get("SHE_LOVE_ME_SEGMENT_MAX_SEGMENTS")
+    if raw:
+        try:
+            return max(1, min(int(raw), 48))
+        except ValueError:
+            pass
+    v = ANALYSIS_CONFIG.get("segment_max_segments", DEFAULT_SEGMENT_MAX_SEGMENTS)
+    try:
+        return max(1, min(int(v), 48))
+    except (TypeError, ValueError):
+        return DEFAULT_SEGMENT_MAX_SEGMENTS
 
 
 def llm_debug_enabled() -> bool:
@@ -185,6 +245,52 @@ DISCOVER_ACTIVE = False
 DISCOVER_PHASE = ""
 DISCOVER_STEP = 0
 DISCOVER_STEP_TOTAL = 3
+
+ANALYZE_PROGRESS_LOCK = threading.Lock()
+ANALYZE_PROGRESS_LINES: list[str] = []
+ANALYZE_PROGRESS_PHASE = ""
+ANALYZE_PROGRESS_MAP_I = 0
+ANALYZE_PROGRESS_MAP_N = 0
+ANALYZE_PROGRESS_RUNNING = False
+
+
+def clear_analyze_progress() -> None:
+    global ANALYZE_PROGRESS_PHASE, ANALYZE_PROGRESS_MAP_I, ANALYZE_PROGRESS_MAP_N, ANALYZE_PROGRESS_RUNNING
+    with ANALYZE_PROGRESS_LOCK:
+        ANALYZE_PROGRESS_LINES.clear()
+        ANALYZE_PROGRESS_PHASE = ""
+        ANALYZE_PROGRESS_MAP_I = 0
+        ANALYZE_PROGRESS_MAP_N = 0
+        ANALYZE_PROGRESS_RUNNING = False
+
+
+def append_analyze_line(text: str) -> None:
+    stamp = datetime.now().strftime("%H:%M:%S")
+    line = f"[{stamp}] {text}".strip()
+    with ANALYZE_PROGRESS_LOCK:
+        ANALYZE_PROGRESS_LINES.append(line)
+        while len(ANALYZE_PROGRESS_LINES) > 400:
+            ANALYZE_PROGRESS_LINES.pop(0)
+
+
+def set_analyze_phase(phase: str, map_i: int = 0, map_n: int = 0) -> None:
+    global ANALYZE_PROGRESS_PHASE, ANALYZE_PROGRESS_MAP_I, ANALYZE_PROGRESS_MAP_N
+    with ANALYZE_PROGRESS_LOCK:
+        ANALYZE_PROGRESS_PHASE = phase
+        ANALYZE_PROGRESS_MAP_I = map_i
+        ANALYZE_PROGRESS_MAP_N = map_n
+
+
+def get_analyze_progress() -> dict[str, Any]:
+    with ANALYZE_PROGRESS_LOCK:
+        return {
+            "running": ANALYZE_PROGRESS_RUNNING,
+            "phase": ANALYZE_PROGRESS_PHASE,
+            "map_index": ANALYZE_PROGRESS_MAP_I,
+            "map_total": ANALYZE_PROGRESS_MAP_N,
+            "lines": list(ANALYZE_PROGRESS_LINES),
+        }
+
 
 # 分析报告用语：本地启发式 vs 大模型无依据
 LOCAL_ANALYSIS_LABEL = "本地化运行，未使用大模型"
@@ -294,6 +400,22 @@ def load_local_config() -> None:
                 ANALYSIS_CONFIG["max_output_tokens"] = parse_int_config(
                     limits, "max_output_tokens", 256, 32768, LLM_MAX_OUTPUT_TOKENS
                 )
+            if not os.environ.get("SHE_LOVE_ME_ANALYSIS_PIPELINE"):
+                ap = str(limits.get("analysis_pipeline", "") or "").strip().lower()
+                if ap in ("auto", "single", "segmented"):
+                    ANALYSIS_CONFIG["analysis_pipeline"] = ap
+            if not os.environ.get("SHE_LOVE_ME_SEGMENT_TARGET_CHARS"):
+                ANALYSIS_CONFIG["segment_target_chars"] = parse_int_config(
+                    limits, "segment_target_chars", 4000, 80000, DEFAULT_SEGMENT_TARGET_CHARS
+                )
+            if not os.environ.get("SHE_LOVE_ME_SEGMENT_HARD_CAP_CHARS"):
+                ANALYSIS_CONFIG["segment_hard_cap_chars"] = parse_int_config(
+                    limits, "segment_hard_cap_chars", 8000, 120000, DEFAULT_SEGMENT_HARD_CAP_CHARS
+                )
+            if not os.environ.get("SHE_LOVE_ME_SEGMENT_MAX_SEGMENTS"):
+                ANALYSIS_CONFIG["segment_max_segments"] = parse_int_config(
+                    limits, "segment_max_segments", 1, 48, DEFAULT_SEGMENT_MAX_SEGMENTS
+                )
     except Exception:
         return
 
@@ -312,6 +434,10 @@ def save_local_config() -> None:
             "max_chat_chars": get_max_chat_chars(),
             "retry_chat_chars": get_retry_chat_chars(),
             "max_output_tokens": get_max_output_tokens(),
+            "analysis_pipeline": get_analysis_pipeline(),
+            "segment_target_chars": get_segment_target_chars(),
+            "segment_hard_cap_chars": get_segment_hard_cap_chars(),
+            "segment_max_segments": get_segment_max_segments(),
         },
     }
     temp_path = LOCAL_CONFIG_FILE.with_suffix(".tmp")
@@ -709,6 +835,10 @@ def build_status() -> dict[str, Any]:
             "max_chat_chars": get_max_chat_chars(),
             "retry_chat_chars": get_retry_chat_chars(),
             "max_output_tokens": get_max_output_tokens(),
+            "analysis_pipeline": get_analysis_pipeline(),
+            "segment_target_chars": get_segment_target_chars(),
+            "segment_hard_cap_chars": get_segment_hard_cap_chars(),
+            "segment_max_segments": get_segment_max_segments(),
         },
     }
 
@@ -745,6 +875,21 @@ def update_llm_config(payload: dict[str, Any]) -> dict[str, str]:
     )
     ANALYSIS_CONFIG["max_output_tokens"] = parse_int_config(
         limits, "max_output_tokens", 256, 32768, get_max_output_tokens()
+    )
+    ap = str(limits.get("analysis_pipeline", get_analysis_pipeline()) or "").strip().lower()
+    if ap not in ("auto", "single", "segmented"):
+        raise AppError("分析模式只支持 auto、single、segmented")
+    ANALYSIS_CONFIG["analysis_pipeline"] = ap
+    ANALYSIS_CONFIG["segment_target_chars"] = parse_int_config(
+        limits, "segment_target_chars", 4000, 80000, get_segment_target_chars()
+    )
+    ANALYSIS_CONFIG["segment_hard_cap_chars"] = parse_int_config(
+        limits, "segment_hard_cap_chars", 8000, 120000, get_segment_hard_cap_chars()
+    )
+    if ANALYSIS_CONFIG["segment_hard_cap_chars"] < ANALYSIS_CONFIG["segment_target_chars"]:
+        raise AppError("分段硬上限不能小于分段目标长度")
+    ANALYSIS_CONFIG["segment_max_segments"] = parse_int_config(
+        limits, "segment_max_segments", 1, 48, get_segment_max_segments()
     )
     save_local_config()
 
@@ -1145,6 +1290,265 @@ def truncate_chat_history(chat: str, max_chars: int) -> str:
     return chat[:head] + "\n\n...[中间聊天记录已截断，保留开头与最近互动]...\n\n" + chat[-tail:]
 
 
+def _split_oversized_segment(text: str, hard_cap: int) -> list[str]:
+    if len(text) <= hard_cap:
+        return [text] if text else []
+    lines = text.splitlines() or [text]
+    out: list[str] = []
+    buf: list[str] = []
+    acc = 0
+    sub_target = max(2000, hard_cap // 2)
+    for line in lines:
+        add = len(line) + (1 if buf else 0)
+        if buf and acc + add > sub_target:
+            out.append("\n".join(buf))
+            buf = [line]
+            acc = len(line)
+        else:
+            buf.append(line)
+            acc += add
+    if buf:
+        out.append("\n".join(buf))
+    if not out:
+        return [text[:hard_cap]]
+    fixed: list[str] = []
+    for seg in out:
+        if len(seg) > hard_cap:
+            fixed.extend(_split_oversized_segment(seg, hard_cap))
+        else:
+            fixed.append(seg)
+    return fixed
+
+
+def chunk_chat_for_segments(raw: str, target: int, hard: int, max_seg: int) -> list[str]:
+    """将完整 chat_history 切成多段，每段约 target 字符、单段不超过 hard，总段数不超过 max_seg。"""
+    chat = (raw or "").strip()
+    if not chat:
+        return []
+    t = max(4000, min(target, 80000))
+    h = max(t, min(hard, 120000))
+    for _ in range(16):
+        parts = _chunk_chat_text_once(chat, t, h)
+        if len(parts) <= max_seg:
+            return parts
+        t = int(t * 1.22 + 500)
+        t = min(t, max(len(chat) // max(1, max_seg) + 2000, h))
+    return parts
+
+
+def _chunk_chat_text_once(chat: str, target_chars: int, hard_cap: int) -> list[str]:
+    lines = chat.splitlines() or [chat]
+    out: list[str] = []
+    buf: list[str] = []
+    acc = 0
+    for line in lines:
+        add = len(line) + (1 if buf else 0)
+        if buf and acc + add > target_chars:
+            out.append("\n".join(buf))
+            buf = [line]
+            acc = len(line)
+        else:
+            buf.append(line)
+            acc += add
+            if acc >= target_chars and buf:
+                out.append("\n".join(buf))
+                buf = []
+                acc = 0
+    if buf:
+        out.append("\n".join(buf))
+    if not out:
+        return [chat[:hard_cap]] if chat else []
+    final: list[str] = []
+    for seg in out:
+        if len(seg) <= hard_cap:
+            final.append(seg)
+        else:
+            final.extend(_split_oversized_segment(seg, hard_cap))
+    return final if final else [chat[:hard_cap]]
+
+
+def infer_date_range_from_text(text: str) -> str:
+    dates = re.findall(r"\[(\d{4}-\d{2}-\d{2}) ", text)
+    if not dates:
+        return "未知"
+    u = sorted(set(dates))
+    if len(u) == 1:
+        return u[0]
+    return f"{u[0]} ~ {u[-1]}"
+
+
+def build_map_segment_prompt(contact: str, segment_index: int, segment_total: int, segment_text: str) -> str:
+    return f"""【场景说明】文本为用户在其本人设备上导出的即时通讯节选，用于个人沟通模式分析；请从中性、合规视角完成任务。
+
+这是与「{contact}」的聊天记录中的**第 {segment_index} / {segment_total} 段**（按时间顺序）。只根据本段内容归纳，不要对整段关系下最终结论；需要结合其它时段才能判断的请写入 open_questions。
+
+只输出一个顶层 JSON 对象，不要 Markdown 与代码围栏。键名固定为：
+- segment_index: 整数，等于 {segment_index}
+- date_range: 从本段首条到末条的时间范围描述，尽量用 YYYY-MM-DD 或 YYYY-MM-DD ~ YYYY-MM-DD，无法判断则写「未知」
+- interaction_patterns: 字符串数组，本段可见的互动模式（每项一两句话）
+- evidence_snippets: 对象数组，每项含 date（YYYY-MM-DD 或「未知」）、quote（原文短引文，80 字内）
+- open_questions: 字符串数组，需结合其它时段才能判断的问题
+- tone_summary: 一两句话概括本段语气与关系温度（可用「暂不确定」）
+
+聊天记录（本段）：
+{segment_text}
+"""
+
+
+def compact_map_results_for_reduce(maps: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    out: list[dict[str, Any]] = []
+    for m in maps:
+        if m.get("segment_failed"):
+            out.append({
+                "segment_failed": True,
+                "segment_index": m.get("segment_index"),
+                "reason": str(m.get("reason", ""))[:400],
+            })
+            continue
+        ev = m.get("evidence_snippets")
+        if isinstance(ev, list):
+            ev_compact = ev[:5]
+        else:
+            ev_compact = []
+        ips = m.get("interaction_patterns")
+        if isinstance(ips, list):
+            ips = [str(x)[:300] for x in ips[:10]]
+        else:
+            ips = []
+        oq = m.get("open_questions")
+        if isinstance(oq, list):
+            oq = [str(x)[:240] for x in oq[:8]]
+        else:
+            oq = []
+        out.append({
+            "segment_index": m.get("segment_index"),
+            "date_range": str(m.get("date_range", ""))[:120],
+            "interaction_patterns": ips,
+            "evidence_snippets": ev_compact,
+            "open_questions": oq,
+            "tone_summary": str(m.get("tone_summary", ""))[:600],
+        })
+    return out
+
+
+def build_reduce_prompt(stats: dict[str, Any], contact: str, map_results: list[dict[str, Any]]) -> str:
+    schema_hint = scrub_schema_for_llm_prompt(summarize_stats(stats, contact))
+    blob = json.dumps(map_results, ensure_ascii=False, indent=2)
+    if len(blob) > 120000:
+        map_results = compact_map_results_for_reduce(map_results)
+        blob = json.dumps(map_results, ensure_ascii=False, indent=2)
+    return f"""【场景说明】文本为用户在其本人设备上导出的即时通讯节选，用于个人沟通模式的统计学与社会语言学自省分析；请从中性、合规视角完成任务。
+
+你是关系聊天记录分析助手。以下为与「{contact}」的多段「分段扫描」结果（JSON 数组，按 segment_index 顺序），以及全局统计数据。请**综合**所有分段与统计，输出与 schema 示例兼容的**单一顶层 JSON**。最终结论以全文时间线为准：分段中的试探性表述可被后续证据否定。
+
+要求：
+1. 只输出一个顶层 JSON 对象：不要用 ``` 代码围栏，不要写前言/后记说明。
+2. JSON 必须兼容下面 schema 示例中的键；括号提示仅说明填写规则，不要原样输出提示句。
+3. language_patterns 等字段优先引用 evidence_snippets 及分段中的 quote；证据不足用「{LLM_NO_SOURCE_LABEL}」。
+4. 所有强心理推断必须谨慎，并尽量引用聊天原话（可从分段 quote 或统计数据归纳）。
+5. 若其它条目证据不足可写「证据不足」，不要编造。
+6. 如果发现严重单向投入、单相思痴迷或情感创伤绑定，danger_warnings 必须高亮。
+
+schema 示例：
+{json.dumps(schema_hint, ensure_ascii=False, indent=2)}
+
+统计数据：
+{json.dumps(stats, ensure_ascii=False, indent=2)}
+
+分段扫描结果（JSON）：
+{blob}
+"""
+
+
+def call_llm_segment_map(
+    contact: str,
+    segment_index: int,
+    segment_total: int,
+    segment_text: str,
+    *,
+    max_out: int,
+) -> dict[str, Any]:
+    prompt = build_map_segment_prompt(contact, segment_index, segment_total, segment_text)
+    return call_llm(prompt, max_output_override=max_out)
+
+
+def call_segmented_llm_analysis(stats: dict[str, Any], contact: str, chat: str) -> dict[str, Any]:
+    global ANALYZE_PROGRESS_RUNNING
+    clear_analyze_progress()
+    with ANALYZE_PROGRESS_LOCK:
+        ANALYZE_PROGRESS_RUNNING = True
+    try:
+        target = get_segment_target_chars()
+        hard = get_segment_hard_cap_chars()
+        max_seg = get_segment_max_segments()
+        append_analyze_line(f"分段分析：目标每段约 {target} 字，硬上限 {hard} 字，最多 {max_seg} 段")
+        set_analyze_phase("chunking", 0, 0)
+        segments = chunk_chat_for_segments(chat, target, hard, max_seg)
+        n = len(segments)
+        if n == 0:
+            append_analyze_line("无法切分（内容为空），退化为单次整段分析")
+            return call_llm_analysis(stats, contact, chat)
+        append_analyze_line(f"已切分为 {n} 段（全文 {len(chat)} 字符）")
+        map_results: list[dict[str, Any]] = []
+        map_out = min(6144, max(2048, get_max_output_tokens() // 2))
+        for i, seg in enumerate(segments, start=1):
+            set_analyze_phase(f"map {i}/{n}", i, n)
+            append_analyze_line(f"Map {i}/{n}：约 {len(seg)} 字符 · {infer_date_range_from_text(seg)}")
+            body = seg
+            last_err: AppError | None = None
+            for attempt in range(3):
+                try:
+                    parsed = call_llm_segment_map(contact, i, n, body, max_out=map_out)
+                    if isinstance(parsed, dict):
+                        parsed.setdefault("segment_index", i)
+                        dr = str(parsed.get("date_range", "")).strip()
+                        if not dr or dr == "未知":
+                            parsed["date_range"] = infer_date_range_from_text(seg)
+                        map_results.append(parsed)
+                    last_err = None
+                    break
+                except AppError as exc:
+                    last_err = exc
+                    if len(body) > 6000:
+                        body = truncate_chat_history(body, max(4000, len(body) // 2))
+                        append_analyze_line(f"Map {i}/{n} 重试：缩短至约 {len(body)} 字符（{exc}）")
+                    else:
+                        break
+            if last_err is not None:
+                append_analyze_line(f"Map {i}/{n} 失败：{last_err}")
+                map_results.append({
+                    "segment_failed": True,
+                    "segment_index": i,
+                    "reason": str(last_err)[:500],
+                    "date_range": infer_date_range_from_text(seg),
+                })
+        try:
+            (DATA_ROOT / "segment_map_results.json").write_text(
+                json.dumps(map_results, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except OSError:
+            pass
+
+        set_analyze_phase("reduce", n, n)
+        append_analyze_line("Reduce：综合各段与统计生成最终 JSON")
+        reduce_prompt = build_reduce_prompt(stats, contact, map_results)
+        analysis = call_llm(reduce_prompt)
+        seg_ok = sum(1 for m in map_results if not m.get("segment_failed"))
+        analysis["_analysis_mode"] = "llm_map_reduce"
+        analysis["_segment_count"] = n
+        analysis["_segment_map_succeeded"] = seg_ok
+        analysis["_map_reduce_note"] = (
+            f"分段 Map-Reduce：共 {n} 段，成功 {seg_ok} 段；最终结论由 Reduce 综合。"
+        )
+        append_analyze_line("Reduce 完成")
+        return analysis
+    finally:
+        with ANALYZE_PROGRESS_LOCK:
+            ANALYZE_PROGRESS_RUNNING = False
+        set_analyze_phase("", 0, 0)
+
+
 def _should_retry_llm_with_shorter_chat(exc: AppError) -> bool:
     """国内中转常见：风控拒答、JSON 解析失败等，可尝试缩短输入重试。"""
     parts: list[str] = [str(exc)]
@@ -1283,13 +1687,13 @@ def parse_llm_json(content: str) -> dict[str, Any]:
     )
 
 
-def call_llm(prompt: str) -> dict[str, Any]:
+def call_llm(prompt: str, *, max_output_override: int | None = None) -> dict[str, Any]:
     provider = LLM_CONFIG.get("provider", "openai")
     if provider == "anthropic":
-        return call_anthropic(prompt)
+        return call_anthropic(prompt, max_output_override=max_output_override)
     if provider == "gemini":
-        return call_gemini(prompt)
-    return call_openai(prompt)
+        return call_gemini(prompt, max_output_override=max_output_override)
+    return call_openai(prompt, max_output_override=max_output_override)
 
 
 def extract_openai_assistant_text(message: dict[str, Any]) -> str:
@@ -1330,14 +1734,15 @@ def extract_openai_assistant_text(message: dict[str, Any]) -> str:
     return ""
 
 
-def call_openai(prompt: str) -> dict[str, Any]:
+def call_openai(prompt: str, *, max_output_override: int | None = None) -> dict[str, Any]:
     base_url = LLM_CONFIG.get("base_url", PROVIDER_DEFAULTS["openai"]["base_url"]).rstrip("/")
     api_key = LLM_CONFIG.get("api_key", "")
     model = LLM_CONFIG.get("model", PROVIDER_DEFAULTS["openai"]["model"])
     if not api_key:
         raise AppError("未配置 API Key，已改用启发式分析。", 400)
 
-    max_output_tokens = get_max_output_tokens()
+    max_output_tokens = max_output_override if max_output_override is not None else get_max_output_tokens()
+    max_output_tokens = max(256, min(max_output_tokens, 32768))
     payload: dict[str, Any] = {
         "model": model,
         "messages": [
@@ -1449,16 +1854,18 @@ def call_openai(prompt: str) -> dict[str, Any]:
     return parse_llm_json(str(content))
 
 
-def call_anthropic(prompt: str) -> dict[str, Any]:
+def call_anthropic(prompt: str, *, max_output_override: int | None = None) -> dict[str, Any]:
     base_url = LLM_CONFIG.get("base_url", PROVIDER_DEFAULTS["anthropic"]["base_url"]).rstrip("/")
     api_key = LLM_CONFIG.get("api_key", "")
     model = LLM_CONFIG.get("model", PROVIDER_DEFAULTS["anthropic"]["model"])
     if not api_key:
         raise AppError("未配置 API Key，已改用启发式分析。", 400)
 
+    mt = max_output_override if max_output_override is not None else get_max_output_tokens()
+    mt = max(256, min(mt, 32768))
     payload = {
         "model": model,
-        "max_tokens": get_max_output_tokens(),
+        "max_tokens": mt,
         "temperature": 0.4,
         "messages": [{"role": "user", "content": prompt}],
     }
@@ -1493,7 +1900,7 @@ def call_anthropic(prompt: str) -> dict[str, Any]:
     return parse_llm_json(text)
 
 
-def call_gemini(prompt: str) -> dict[str, Any]:
+def call_gemini(prompt: str, *, max_output_override: int | None = None) -> dict[str, Any]:
     base_url = LLM_CONFIG.get("base_url", PROVIDER_DEFAULTS["gemini"]["base_url"]).rstrip("/")
     api_key = LLM_CONFIG.get("api_key", "")
     model = LLM_CONFIG.get("model", PROVIDER_DEFAULTS["gemini"]["model"])
@@ -1504,8 +1911,10 @@ def call_gemini(prompt: str) -> dict[str, Any]:
     url = f"{base_url}/models/{model}:generateContent?key={api_key}"
     headers = {**LLM_HTTP_HEADERS, "Content-Type": "application/json"}
     body: Optional[dict[str, Any]] = None
+    gmt = max_output_override if max_output_override is not None else get_max_output_tokens()
+    gmt = max(256, min(gmt, 32768))
     for attempt in (0, 1):
-        gen_cfg: dict[str, Any] = {"temperature": 0.4, "maxOutputTokens": get_max_output_tokens()}
+        gen_cfg: dict[str, Any] = {"temperature": 0.4, "maxOutputTokens": gmt}
         if attempt == 0 and want_mime:
             gen_cfg["responseMimeType"] = "application/json"
         payload = {
@@ -1548,6 +1957,9 @@ def is_llm_analysis_insufficient(analysis: dict[str, Any]) -> bool:
         "_user_notice",
         "_llm_failure_reason",
         "_llm_failure_detail",
+        "_segment_count",
+        "_segment_map_succeeded",
+        "_map_reduce_note",
     }
     if not any(k for k in analysis if k not in skip):
         return True
@@ -1564,8 +1976,15 @@ def make_analysis(use_llm: bool) -> dict[str, Any]:
     if use_llm:
         chat_path = DATA_ROOT / "chat_history.txt"
         chat = chat_path.read_text(encoding="utf-8", errors="replace") if chat_path.exists() else ""
+        pipeline = get_analysis_pipeline()
+        use_map_reduce = pipeline == "segmented" or (
+            pipeline == "auto" and len(chat) > get_max_chat_chars()
+        )
         try:
-            analysis = call_llm_analysis(stats, contact, chat)
+            if use_map_reduce:
+                analysis = call_segmented_llm_analysis(stats, contact, chat)
+            else:
+                analysis = call_llm_analysis(stats, contact, chat)
             analysis = normalize_llm_legacy_phrases(analysis)
             if is_llm_analysis_insufficient(analysis):
                 base = summarize_stats(stats, contact)
@@ -1619,6 +2038,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if self.path.split("?", 1)[0] == "/api/messages/daily":
                 self.send_json({"ok": True, **build_daily_counts_from_messages()})
+                return
+            if self.path.split("?", 1)[0] == "/api/analyze/progress":
+                self.send_json({"ok": True, **get_analyze_progress()})
                 return
             if self.path.startswith("/reports/"):
                 name = urllib.request.url2pathname(self.path[len("/reports/"):])
